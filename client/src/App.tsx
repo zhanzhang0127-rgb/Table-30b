@@ -11,6 +11,7 @@ import Profile from "./pages/Profile";
 import Restaurants from "./pages/Restaurants";
 import Rankings from "./pages/Rankings";
 import AiChat from "./pages/AiChat";
+import RestaurantDetail from "./pages/RestaurantDetail";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -23,6 +24,7 @@ function Router() {
       <Route path={"/restaurants"} component={Restaurants} />
       <Route path={"/rankings"} component={Rankings} />
       <Route path={"/ai-chat"} component={AiChat} />
+      <Route path={"/restaurant/:id"} component={RestaurantDetail} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

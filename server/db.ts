@@ -99,19 +99,60 @@ export async function createPost(post: typeof posts.$inferInsert) {
 export async function getPostsByUserId(userId: number, limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(posts).where(eq(posts.userId, userId)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  const result = await db.select({
+    id: posts.id,
+    userId: posts.userId,
+    title: posts.title,
+    content: posts.content,
+    images: posts.images,
+    restaurantId: posts.restaurantId,
+    rating: posts.rating,
+    likes: posts.likes,
+    comments: posts.comments,
+    createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt,
+    userName: users.name,
+  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.userId, userId)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  return result;
 }
 
 export async function getPostsForFeed(limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(posts).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  const result = await db.select({
+    id: posts.id,
+    userId: posts.userId,
+    title: posts.title,
+    content: posts.content,
+    images: posts.images,
+    restaurantId: posts.restaurantId,
+    rating: posts.rating,
+    likes: posts.likes,
+    comments: posts.comments,
+    createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt,
+    userName: users.name,
+  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  return result;
 }
 
 export async function getPostById(postId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
+  const result = await db.select({
+    id: posts.id,
+    userId: posts.userId,
+    title: posts.title,
+    content: posts.content,
+    images: posts.images,
+    restaurantId: posts.restaurantId,
+    rating: posts.rating,
+    likes: posts.likes,
+    comments: posts.comments,
+    createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt,
+    userName: users.name,
+  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.id, postId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -195,7 +236,17 @@ export async function createComment(comment: typeof comments.$inferInsert) {
 export async function getCommentsByPostId(postId: number, limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(comments).where(eq(comments.postId, postId)).orderBy(desc(comments.createdAt)).limit(limit).offset(offset);
+  const result = await db.select({
+    id: comments.id,
+    postId: comments.postId,
+    userId: comments.userId,
+    content: comments.content,
+    likes: comments.likes,
+    createdAt: comments.createdAt,
+    updatedAt: comments.updatedAt,
+    userName: users.name,
+  }).from(comments).leftJoin(users, eq(comments.userId, users.id)).where(eq(comments.postId, postId)).orderBy(desc(comments.createdAt)).limit(limit).offset(offset);
+  return result;
 }
 
 // AI Recommendations queries

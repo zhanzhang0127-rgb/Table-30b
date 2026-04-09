@@ -7,12 +7,12 @@ import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { mockPosts } from "@/lib/mockData";
 
 export default function Feed() {
   const { user, loading, isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
   const [offset, setOffset] = useState(0);
+  const [allPosts, setAllPosts] = useState<any[]>([]);
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -21,9 +21,24 @@ export default function Feed() {
     }
   }, [isAuthenticated, loading, navigate]);
 
-  // Use mock data for demo
-  const [posts] = useState(mockPosts);
-  const isLoading = false;
+  // Fetch posts from API
+  const { data: postsData, isLoading } = trpc.posts.getFeed.useQuery(
+    { offset, limit: 20 },
+    { enabled: isAuthenticated }
+  );
+
+  // Update allPosts when new data arrives
+  useEffect(() => {
+    if (postsData) {
+      // postsData is directly an array of posts
+      const newPosts = Array.isArray(postsData) ? postsData : [];
+      if (offset === 0) {
+        setAllPosts(newPosts);
+      } else {
+        setAllPosts(prev => [...prev, ...newPosts]);
+      }
+    }
+  }, [postsData, offset]);
 
   if (loading || !isAuthenticated) {
     return (
@@ -78,14 +93,14 @@ export default function Feed() {
       <main className="container py-8">
         <div className="max-w-2xl mx-auto space-y-6">
           {/* Posts Feed */}
-          {isLoading ? (
+          {isLoading && offset === 0 ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
             </div>
-          ) : posts && posts.length > 0 ? (
+          ) : allPosts && allPosts.length > 0 ? (
             <>
-              {posts.map((post) => (
-                <Card key={post.id} className="overflow-hidden hover:shadow-md transition-shadow">
+              {allPosts.map((post) => (
+                <Card key={post.id} className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/post/${post.id}`)}>
                   {/* Post Header */}
                   <div className="p-6 border-b border-border">
                     <div className="flex items-center justify-between mb-4">
@@ -96,9 +111,9 @@ export default function Feed() {
                           </span>
                         </div>
                         <div>
-                          <p className="font-semibold text-foreground">{post.userName}</p>
+                          <p className="font-semibold text-foreground">{post.userName || "用户"}</p>
                           <p className="text-sm text-foreground/60">
-                            {post.createdAt instanceof Date ? formatDistanceToNow(post.createdAt, { 
+                            {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { 
                               addSuffix: true,
                               locale: zhCN 
                             }) : "刚刚"}
@@ -122,7 +137,7 @@ export default function Feed() {
                   {post.images && (
                     <div className="bg-muted/30 p-4">
                       <div className="grid grid-cols-2 gap-2">
-                        {JSON.parse(post.images || "[]").slice(0, 4).map((img: string, idx: number) => (
+                        {(typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images).slice(0, 4).map((img: string, idx: number) => (
                           <img 
                             key={idx}
                             src={img} 
@@ -139,11 +154,11 @@ export default function Feed() {
                     <div className="flex items-center gap-6 text-foreground/60">
                       <button className="flex items-center gap-2 hover:text-primary transition-colors group">
                         <Heart className="w-5 h-5 group-hover:fill-current" />
-                        <span className="text-sm">{post.likes}</span>
+                        <span className="text-sm">{post.likes || 0}</span>
                       </button>
                       <button className="flex items-center gap-2 hover:text-primary transition-colors">
                         <MessageCircle className="w-5 h-5" />
-                        <span className="text-sm">{post.comments}</span>
+                        <span className="text-sm">{post.comments || 0}</span>
                       </button>
                       <button className="flex items-center gap-2 hover:text-primary transition-colors">
                         <Share2 className="w-5 h-5" />
@@ -154,14 +169,17 @@ export default function Feed() {
               ))}
 
               {/* Load More Button */}
-              <div className="flex justify-center pt-4">
-                <Button 
-                  variant="outline"
-                  onClick={() => setOffset(offset + 20)}
-                >
-                  加载更多
-                </Button>
-              </div>
+              {postsData && (postsData as any[]).length >= 20 && (
+                <div className="flex justify-center pt-4">
+                  <Button 
+                    variant="outline"
+                    onClick={() => setOffset(offset + 20)}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "加载中..." : "加载更多"}
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
             <Card className="p-12 text-center">

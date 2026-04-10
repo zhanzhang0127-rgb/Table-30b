@@ -53,6 +53,7 @@ export default function PostDetail() {
       setCommentText("");
       toast.success("评论成功！");
       refetchComments();
+      refetchPost();
     },
     onError: (error) => {
       toast.error("评论失败：" + error.message);
@@ -116,6 +117,18 @@ export default function PostDetail() {
     onSuccess: () => {
       toast.success("评论已删除");
       refetchComments();
+      refetchPost();
+    },
+    onError: (error) => {
+      toast.error("删除失败：" + error.message);
+    },
+  });
+
+  // Delete post mutation
+  const deletePostMutation = trpc.posts.delete.useMutation({
+    onSuccess: () => {
+      toast.success("帖子已删除");
+      navigate("/feed");
     },
     onError: (error) => {
       toast.error("删除失败：" + error.message);
@@ -159,6 +172,14 @@ export default function PostDetail() {
   const handleDeleteComment = (commentId: number) => {
     if (confirm("确定要删除这条评论吗？")) {
       deleteCommentMutation.mutate(commentId);
+    }
+  };
+
+  const handleDeletePost = () => {
+    if (confirm("确定要删除这个帖子吗？")) {
+      if (postId) {
+        deletePostMutation.mutate(postId);
+      }
     }
   };
 
@@ -267,12 +288,24 @@ export default function PostDetail() {
                     </p>
                   </div>
                 </div>
-                {post.rating && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-lg font-bold text-secondary">★</span>
-                    <span className="font-semibold text-foreground">{post.rating}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {post.rating && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-lg font-bold text-secondary">★</span>
+                      <span className="font-semibold text-foreground">{post.rating}</span>
+                    </div>
+                  )}
+                  {user?.id === post.userId && (
+                    <button
+                      onClick={handleDeletePost}
+                      disabled={deletePostMutation.isPending}
+                      className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"
+                      title="删除帖子"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Post Title */}

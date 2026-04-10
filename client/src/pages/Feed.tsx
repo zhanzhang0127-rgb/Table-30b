@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Heart, MessageCircle, Share2, Bookmark } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -10,7 +10,7 @@ import { zhCN } from "date-fns/locale";
 import { toast } from "sonner";
 
 export default function Feed() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const [, navigate] = useLocation();
   const [offset, setOffset] = useState(0);
   const [allPosts, setAllPosts] = useState<any[]>([]);
@@ -107,6 +107,17 @@ export default function Feed() {
     },
   });
 
+  // Delete post mutation
+  const deletePostMutation = trpc.posts.delete.useMutation({
+    onSuccess: (_, variables) => {
+      setAllPosts(prev => prev.filter(p => p.id !== variables));
+      toast.success("帖子已删除");
+    },
+    onError: (error) => {
+      toast.error("删除失败：" + error.message);
+    },
+  });
+
   const handleLikePost = (postId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (likedPosts.has(postId)) {
@@ -122,6 +133,13 @@ export default function Feed() {
       removeFavoriteMutation.mutate(restaurantId);
     } else {
       addFavoriteMutation.mutate(restaurantId);
+    }
+  };
+
+  const handleDeletePost = (postId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm("确定要删除这个帖子吗？")) {
+      deletePostMutation.mutate(postId);
     }
   };
 
@@ -206,12 +224,24 @@ export default function Feed() {
                           </p>
                         </div>
                       </div>
-                      {post.rating && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-lg font-bold text-secondary">★</span>
-                          <span className="font-semibold text-foreground">{post.rating}</span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {post.rating && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-lg font-bold text-secondary">★</span>
+                            <span className="font-semibold text-foreground">{post.rating}</span>
+                          </div>
+                        )}
+                        {user?.id === post.userId && (
+                          <button
+                            onClick={(e) => handleDeletePost(post.id, e)}
+                            disabled={deletePostMutation.isPending}
+                            className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"
+                            title="删除帖子"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Post Title */}
@@ -279,25 +309,19 @@ export default function Feed() {
               {postsData && (postsData as any[]).length >= 20 && (
                 <div className="flex justify-center pt-4">
                   <Button 
-                    variant="outline"
                     onClick={() => setOffset(offset + 20)}
                     disabled={isLoading}
+                    variant="outline"
                   >
-                    {isLoading ? "加载中..." : "加载更多"}
+                    加载更多
                   </Button>
                 </div>
               )}
             </>
           ) : (
-            <Card className="p-12 text-center">
-              <p className="text-foreground/70 mb-4">暂无内容</p>
-              <Button 
-                onClick={() => navigate("/publish")}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                成为第一个分享者
-              </Button>
-            </Card>
+            <div className="text-center py-12">
+              <p className="text-foreground/60">暂无帖子</p>
+            </div>
           )}
         </div>
       </main>

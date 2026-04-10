@@ -248,7 +248,14 @@ export async function getUserFavorites(userId: number) {
 export async function createComment(comment: typeof comments.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.insert(comments).values(comment);
+  const result = await db.insert(comments).values(comment);
+  // Update post comment count
+  const post = await getPostById(comment.postId);
+  if (post) {
+    const newCommentCount = (post.comments || 0) + 1;
+    await db.update(posts).set({ comments: newCommentCount }).where(eq(posts.id, comment.postId));
+  }
+  return result;
 }
 
 export async function getCommentsByPostId(postId: number, limit: number = 20, offset: number = 0) {
@@ -270,6 +277,16 @@ export async function getCommentsByPostId(postId: number, limit: number = 20, of
 export async function deleteComment(commentId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // Get comment to find postId
+  const comment = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (comment.length > 0) {
+    const postId = comment[0].postId;
+    const post = await getPostById(postId);
+    if (post) {
+      const newCommentCount = Math.max(0, (post.comments || 0) - 1);
+      await db.update(posts).set({ comments: newCommentCount }).where(eq(posts.id, postId));
+    }
+  }
   return db.delete(comments).where(eq(comments.id, commentId));
 }
 

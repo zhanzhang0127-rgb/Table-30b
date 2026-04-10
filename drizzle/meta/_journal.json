@@ -15,6 +15,13 @@
       "when": 1775135142339,
       "tag": "0001_deep_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1775791275879,
+      "tag": "0002_sticky_caretaker",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Heart, MessageCircle, Share2, Loader2 } from "lucide-react";
+import { Heart, MessageCircle, Share2, Loader2, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -16,6 +16,8 @@ export default function PostDetail() {
   const [postId, setPostId] = useState<number | null>(null);
   const [commentText, setCommentText] = useState("");
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [likedPostId, setLikedPostId] = useState<number | null>(null);
+  const [likedComments, setLikedComments] = useState<Set<number>>(new Set());
 
   // Extract postId from URL
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function PostDetail() {
   }, [isAuthenticated, loading, navigate]);
 
   // Fetch post data
-  const { data: post, isLoading: isLoadingPost } = trpc.posts.getById.useQuery(
+  const { data: post, isLoading: isLoadingPost, refetch: refetchPost } = trpc.posts.getById.useQuery(
     postId || 0,
     { enabled: postId !== null && isAuthenticated }
   );
@@ -57,6 +59,69 @@ export default function PostDetail() {
     },
   });
 
+  // Like post mutation
+  const likePostMutation = trpc.likes.likePost.useMutation({
+    onSuccess: () => {
+      setLikedPostId(postId);
+      toast.success("已点赞");
+      refetchPost();
+    },
+    onError: (error) => {
+      toast.error("点赞失败：" + error.message);
+    },
+  });
+
+  // Unlike post mutation
+  const unlikePostMutation = trpc.likes.unlikePost.useMutation({
+    onSuccess: () => {
+      setLikedPostId(null);
+      toast.success("已取消点赞");
+      refetchPost();
+    },
+    onError: (error) => {
+      toast.error("取消点赞失败：" + error.message);
+    },
+  });
+
+  // Like comment mutation
+  const likeCommentMutation = trpc.comments.like.useMutation({
+    onSuccess: (_, variables) => {
+      setLikedComments(prev => new Set(prev).add(variables));
+      toast.success("已点赞");
+      refetchComments();
+    },
+    onError: (error) => {
+      toast.error("点赞失败：" + error.message);
+    },
+  });
+
+  // Unlike comment mutation
+  const unlikeCommentMutation = trpc.comments.unlike.useMutation({
+    onSuccess: (_, variables) => {
+      setLikedComments(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(variables);
+        return newSet;
+      });
+      toast.success("已取消点赞");
+      refetchComments();
+    },
+    onError: (error) => {
+      toast.error("取消点赞失败：" + error.message);
+    },
+  });
+
+  // Delete comment mutation
+  const deleteCommentMutation = trpc.comments.delete.useMutation({
+    onSuccess: () => {
+      toast.success("评论已删除");
+      refetchComments();
+    },
+    onError: (error) => {
+      toast.error("删除失败：" + error.message);
+    },
+  });
+
   const handleSubmitComment = async () => {
     if (!commentText.trim() || !postId) {
       toast.error("请输入评论内容");
@@ -71,6 +136,29 @@ export default function PostDetail() {
       });
     } finally {
       setIsSubmittingComment(false);
+    }
+  };
+
+  const handleLikePost = () => {
+    if (!postId) return;
+    if (likedPostId === postId) {
+      unlikePostMutation.mutate(postId);
+    } else {
+      likePostMutation.mutate(postId);
+    }
+  };
+
+  const handleLikeComment = (commentId: number) => {
+    if (likedComments.has(commentId)) {
+      unlikeCommentMutation.mutate(commentId);
+    } else {
+      likeCommentMutation.mutate(commentId);
+    }
+  };
+
+  const handleDeleteComment = (commentId: number) => {
+    if (confirm("确定要删除这条评论吗？")) {
+      deleteCommentMutation.mutate(commentId);
     }
   };
 
@@ -103,6 +191,7 @@ export default function PostDetail() {
               />
               <span className="text-xl font-bold text-primary">吃了吗</span>
             </div>
+            
             <Button 
               variant="outline" 
               size="sm"
@@ -112,16 +201,19 @@ export default function PostDetail() {
             </Button>
           </div>
         </header>
+
         <main className="container py-8">
-          <Card className="p-12 text-center">
-            <p className="text-foreground/70">帖子不存在</p>
-            <Button 
-              onClick={() => navigate("/feed")}
-              className="mt-4"
-            >
-              返回首页
-            </Button>
-          </Card>
+          <div className="max-w-2xl mx-auto">
+            <Card className="p-12 text-center">
+              <p className="text-foreground/70 mb-4">帖子不存在</p>
+              <Button 
+                onClick={() => navigate("/feed")}
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                返回首页
+              </Button>
+            </Card>
+          </div>
         </main>
       </div>
     );
@@ -207,8 +299,17 @@ export default function PostDetail() {
             {/* Post Actions */}
             <div className="p-6 flex items-center justify-between border-t border-border">
               <div className="flex items-center gap-6 text-foreground/60">
-                <button className="flex items-center gap-2 hover:text-primary transition-colors group">
-                  <Heart className="w-5 h-5 group-hover:fill-current" />
+                <button 
+                  onClick={handleLikePost}
+                  disabled={likePostMutation.isPending || unlikePostMutation.isPending}
+                  className={`flex items-center gap-2 transition-colors group ${
+                    likedPostId === postId ? "text-secondary" : "hover:text-primary"
+                  }`}
+                >
+                  <Heart 
+                    className="w-5 h-5 group-hover:fill-current" 
+                    fill={likedPostId === postId ? "currentColor" : "none"}
+                  />
                   <span className="text-sm">{post.likes || 0}</span>
                 </button>
                 <button className="flex items-center gap-2 hover:text-primary transition-colors">
@@ -264,7 +365,7 @@ export default function PostDetail() {
             ) : comments && comments.length > 0 ? (
               <div className="space-y-4">
                 {comments.map((comment: any) => (
-                  <div key={comment.id} className="flex gap-3">
+                  <div key={comment.id} className="flex gap-3 pb-4 border-b border-border last:border-b-0">
                     <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
                       <span className="text-xs font-bold text-primary">
                         {comment.userName?.charAt(0) || "U"}
@@ -280,7 +381,32 @@ export default function PostDetail() {
                           }) : "刚刚"}
                         </p>
                       </div>
-                      <p className="text-foreground/70 text-sm">{comment.content}</p>
+                      <p className="text-foreground/70 text-sm mb-2">{comment.content}</p>
+                      
+                      {/* Comment Actions */}
+                      <div className="flex items-center gap-4 text-xs text-foreground/60">
+                        <button 
+                          onClick={() => handleLikeComment(comment.id)}
+                          disabled={likeCommentMutation.isPending || unlikeCommentMutation.isPending}
+                          className={`flex items-center gap-1 transition-colors ${
+                            likedComments.has(comment.id) ? "text-secondary" : "hover:text-primary"
+                          }`}
+                        >
+                          <Heart 
+                            className="w-4 h-4" 
+                            fill={likedComments.has(comment.id) ? "currentColor" : "none"}
+                          />
+                          <span>{comment.likes || 0}</span>
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteComment(comment.id)}
+                          disabled={deleteCommentMutation.isPending}
+                          className="flex items-center gap-1 hover:text-destructive transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>删除</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

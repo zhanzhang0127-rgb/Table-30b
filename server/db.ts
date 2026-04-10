@@ -249,6 +249,55 @@ export async function getCommentsByPostId(postId: number, limit: number = 20, of
   return result;
 }
 
+export async function deleteComment(commentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(comments).where(eq(comments.id, commentId));
+}
+
+// Likes queries
+export async function likePost(userId: number, postId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update post likes count
+  const post = await getPostById(postId);
+  if (!post) throw new Error("Post not found");
+  const newLikes = (post.likes || 0) + 1;
+  return db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+}
+
+export async function unlikePost(userId: number, postId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update post likes count
+  const post = await getPostById(postId);
+  if (!post) throw new Error("Post not found");
+  const newLikes = Math.max((post.likes || 0) - 1, 0);
+  return db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+}
+
+export async function likeComment(userId: number, commentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update comment likes count
+  const result = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (result.length === 0) throw new Error("Comment not found");
+  const comment = result[0];
+  const newLikes = (comment.likes || 0) + 1;
+  return db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
+}
+
+export async function unlikeComment(userId: number, commentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update comment likes count
+  const result = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (result.length === 0) throw new Error("Comment not found");
+  const comment = result[0];
+  const newLikes = Math.max((comment.likes || 0) - 1, 0);
+  return db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
+}
+
 // AI Recommendations queries
 export async function createAiRecommendation(recommendation: typeof aiRecommendations.$inferInsert) {
   const db = await getDb();

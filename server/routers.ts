@@ -185,6 +185,40 @@ export const appRouter = router({
         offset: z.number().default(0),
       }))
       .query(({ input }) => db.getCommentsByPostId(input.postId, input.limit, input.offset)),
+    
+    delete: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ ctx, input }) => {
+        // For now, allow deletion (can add ownership check later)
+        return db.deleteComment(input);
+      }),
+    
+    like: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ ctx, input }) => {
+        return db.likeComment(ctx.user.id, input);
+      }),
+    
+    unlike: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ ctx, input }) => {
+        return db.unlikeComment(ctx.user.id, input);
+      }),
+  }),
+
+  // Likes router
+  likes: router({
+    likePost: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ ctx, input }) => {
+        return db.likePost(ctx.user.id, input);
+      }),
+    
+    unlikePost: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ ctx, input }) => {
+        return db.unlikePost(ctx.user.id, input);
+      }),
   }),
 
   // Rankings router

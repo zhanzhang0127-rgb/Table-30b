@@ -28,6 +28,12 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
+      // Validate email domain - must be @student.xjtlu.edu.cn
+      if (userInfo.email && !userInfo.email.endsWith("@student.xjtlu.edu.cn")) {
+        res.redirect(302, "/?error=invalid_email_domain");
+        return;
+      }
+
       await db.upsertUser({
         openId: userInfo.openId,
         name: userInfo.name || null,
@@ -44,10 +50,10 @@ export function registerOAuthRoutes(app: Express) {
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      res.redirect(302, "/");
+      res.redirect(302, "/?success=true");
     } catch (error) {
       console.error("[OAuth] Callback failed", error);
-      res.status(500).json({ error: "OAuth callback failed" });
+      res.redirect(302, "/?error=oauth_failed");
     }
   });
 }

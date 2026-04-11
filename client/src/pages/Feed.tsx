@@ -2,17 +2,20 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Heart, MessageCircle, Share2, Plus } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { mockPosts } from "@/lib/mockData";
+import { toast } from "sonner";
 
 export default function Feed() {
-  const { user, loading, isAuthenticated } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const [, navigate] = useLocation();
   const [offset, setOffset] = useState(0);
+  const [allPosts, setAllPosts] = useState<any[]>([]);
+  const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
+  const [favoritePosts, setFavoritePosts] = useState<Set<number>>(new Set());
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -21,9 +24,134 @@ export default function Feed() {
     }
   }, [isAuthenticated, loading, navigate]);
 
-  // Use mock data for demo
-  const [posts] = useState(mockPosts);
-  const isLoading = false;
+  // Fetch posts
+  const { data: postsData, isLoading } = trpc.posts.getFeed.useQuery(
+    { limit: 20, offset },
+    { enabled: isAuthenticated }
+  );
+
+  // Fetch user's favorites
+  const { data: favorites } = trpc.favorites.getMyFavorites.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  // Initialize favorites set
+  useEffect(() => {
+    if (favorites) {
+      const favoriteIds = new Set(favorites.map((f: any) => f.restaurantId));
+      setFavoritePosts(favoriteIds);
+    }
+  }, [favorites]);
+
+  // Update allPosts when new data arrives
+  useEffect(() => {
+    if (postsData) {
+      if (offset === 0) {
+        setAllPosts(postsData as any[]);
+      } else {
+        setAllPosts(prev => [...prev, ...(postsData as any[])]);
+      }
+    }
+  }, [postsData, offset]);
+
+  // Like post mutation
+  const likePostMutation = trpc.likes.likePost.useMutation({
+    onSuccess: (_, variables) => {
+      setLikedPosts(prev => new Set(prev).add(variables));
+      toast.success("已点赞");
+    },
+    onError: (error) => {
+      toast.error("点赞失败：" + error.message);
+    },
+  });
+
+  // Unlike post mutation
+  const unlikePostMutation = trpc.likes.unlikePost.useMutation({
+    onSuccess: (_, variables) => {
+      setLikedPosts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(variables);
+        return newSet;
+      });
+      toast.success("已取消点赞");
+    },
+    onError: (error) => {
+      toast.error("取消点赞失败：" + error.message);
+    },
+  });
+
+  // Add favorite mutation
+  const addFavoriteMutation = trpc.favorites.add.useMutation({
+    onSuccess: (_, variables) => {
+      setFavoritePosts(prev => new Set(prev).add(variables));
+      toast.success("已收藏");
+    },
+    onError: (error) => {
+      toast.error("收藏失败：" + error.message);
+    },
+  });
+
+  // Remove favorite mutation
+  const removeFavoriteMutation = trpc.favorites.remove.useMutation({
+    onSuccess: (_, variables) => {
+      setFavoritePosts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(variables);
+        return newSet;
+      });
+      toast.success("已取消收藏");
+    },
+    onError: (error) => {
+      toast.error("取消收藏失败：" + error.message);
+    },
+  });
+
+  // Delete post mutation
+  const deletePostMutation = trpc.posts.delete.useMutation({
+    onSuccess: (_, variables) => {
+      setAllPosts(prev => prev.filter(p => p.id !== variables));
+      toast.success("帖子已删除");
+    },
+    onError: (error: any) => {
+      if (error.code === "FORBIDDEN") {
+        toast.error("您没有权限删除这个帖子");
+      } else if (error.code === "NOT_FOUND") {
+        toast.error("帖子不存在");
+      } else {
+        toast.error("删除失败：" + error.message);
+      }
+    },
+  });
+
+  const handleLikePost = (postId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (likedPosts.has(postId)) {
+      unlikePostMutation.mutate(postId);
+    } else {
+      likePostMutation.mutate(postId);
+    }
+  };
+
+  const handleToggleFavorite = (restaurantId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (favoritePosts.has(restaurantId)) {
+      removeFavoriteMutation.mutate(restaurantId);
+    } else {
+      addFavoriteMutation.mutate(restaurantId);
+    }
+  };
+
+  const handleDeletePost = (postId: number, userId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (user?.id !== userId) {
+      toast.error("您没有权限删除这个帖子");
+      return;
+    }
+    if (confirm("确定要删除这个帖子吗？")) {
+      deletePostMutation.mutate(postId);
+    }
+  };
 
   if (loading || !isAuthenticated) {
     return (
@@ -56,19 +184,17 @@ export default function Feed() {
 
           <div className="flex items-center gap-3">
             <Button 
-              size="sm"
               onClick={() => navigate("/publish")}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">发布</span>
+              + 发布
             </Button>
             <Button 
               variant="outline" 
               size="sm"
               onClick={() => navigate("/profile")}
             >
-              {user?.name || "个人中心"}
+              个人中心
             </Button>
           </div>
         </div>
@@ -77,15 +203,18 @@ export default function Feed() {
       {/* Main Content */}
       <main className="container py-8">
         <div className="max-w-2xl mx-auto space-y-6">
-          {/* Posts Feed */}
-          {isLoading ? (
+          {isLoading && offset === 0 ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
             </div>
-          ) : posts && posts.length > 0 ? (
+          ) : allPosts && allPosts.length > 0 ? (
             <>
-              {posts.map((post) => (
-                <Card key={post.id} className="overflow-hidden hover:shadow-md transition-shadow">
+              {allPosts.map((post) => (
+                <Card 
+                  key={post.id} 
+                  className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer" 
+                  onClick={() => navigate(`/post/${post.id}`)}
+                >
                   {/* Post Header */}
                   <div className="p-6 border-b border-border">
                     <div className="flex items-center justify-between mb-4">
@@ -96,21 +225,33 @@ export default function Feed() {
                           </span>
                         </div>
                         <div>
-                          <p className="font-semibold text-foreground">{post.userName}</p>
+                          <p className="font-semibold text-foreground">{post.userName || "用户"}</p>
                           <p className="text-sm text-foreground/60">
-                            {post.createdAt instanceof Date ? formatDistanceToNow(post.createdAt, { 
+                            {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { 
                               addSuffix: true,
                               locale: zhCN 
                             }) : "刚刚"}
                           </p>
                         </div>
                       </div>
-                      {post.rating && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-lg font-bold text-secondary">★</span>
-                          <span className="font-semibold text-foreground">{post.rating}</span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {post.rating && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-lg font-bold text-secondary">★</span>
+                            <span className="font-semibold text-foreground">{post.rating}</span>
+                          </div>
+                        )}
+                        {user?.id === post.userId && (
+                          <button
+                            onClick={(e) => handleDeletePost(post.id, post.userId, e)}
+                            disabled={deletePostMutation.isPending}
+                            className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"
+                            title="删除帖子"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Post Title */}
@@ -122,7 +263,7 @@ export default function Feed() {
                   {post.images && (
                     <div className="bg-muted/30 p-4">
                       <div className="grid grid-cols-2 gap-2">
-                        {JSON.parse(post.images || "[]").slice(0, 4).map((img: string, idx: number) => (
+                        {(typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images).slice(0, 4).map((img: string, idx: number) => (
                           <img 
                             key={idx}
                             src={img} 
@@ -137,13 +278,34 @@ export default function Feed() {
                   {/* Post Actions */}
                   <div className="p-6 flex items-center justify-between border-t border-border">
                     <div className="flex items-center gap-6 text-foreground/60">
-                      <button className="flex items-center gap-2 hover:text-primary transition-colors group">
-                        <Heart className="w-5 h-5 group-hover:fill-current" />
-                        <span className="text-sm">{post.likes}</span>
+                      <button 
+                        onClick={(e) => handleLikePost(post.id, e)}
+                        disabled={likePostMutation.isPending || unlikePostMutation.isPending}
+                        className={`flex items-center gap-2 transition-colors group ${
+                          likedPosts.has(post.id) ? "text-secondary" : "hover:text-primary"
+                        }`}
+                      >
+                        <Heart 
+                          className="w-5 h-5 group-hover:fill-current" 
+                          fill={likedPosts.has(post.id) ? "currentColor" : "none"}
+                        />
+                        <span className="text-sm">{post.likes || 0}</span>
                       </button>
                       <button className="flex items-center gap-2 hover:text-primary transition-colors">
                         <MessageCircle className="w-5 h-5" />
-                        <span className="text-sm">{post.comments}</span>
+                        <span className="text-sm">{post.comments || 0}</span>
+                      </button>
+                      <button 
+                        onClick={(e) => handleToggleFavorite(post.restaurantId || post.id, e)}
+                        disabled={addFavoriteMutation.isPending || removeFavoriteMutation.isPending}
+                        className={`flex items-center gap-2 transition-colors ${
+                          favoritePosts.has(post.restaurantId || post.id) ? "text-secondary" : "hover:text-primary"
+                        }`}
+                      >
+                        <Bookmark 
+                          className="w-5 h-5" 
+                          fill={favoritePosts.has(post.restaurantId || post.id) ? "currentColor" : "none"}
+                        />
                       </button>
                       <button className="flex items-center gap-2 hover:text-primary transition-colors">
                         <Share2 className="w-5 h-5" />
@@ -154,25 +316,22 @@ export default function Feed() {
               ))}
 
               {/* Load More Button */}
-              <div className="flex justify-center pt-4">
-                <Button 
-                  variant="outline"
-                  onClick={() => setOffset(offset + 20)}
-                >
-                  加载更多
-                </Button>
-              </div>
+              {postsData && (postsData as any[]).length >= 20 && (
+                <div className="flex justify-center pt-4">
+                  <Button 
+                    onClick={() => setOffset(offset + 20)}
+                    disabled={isLoading}
+                    variant="outline"
+                  >
+                    加载更多
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
-            <Card className="p-12 text-center">
-              <p className="text-foreground/70 mb-4">暂无内容</p>
-              <Button 
-                onClick={() => navigate("/publish")}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                成为第一个分享者
-              </Button>
-            </Card>
+            <div className="text-center py-12">
+              <p className="text-foreground/60">暂无帖子</p>
+            </div>
           )}
         </div>
       </main>

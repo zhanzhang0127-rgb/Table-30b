@@ -68,7 +68,7 @@ export default function Publish() {
       await createPostMutation.mutateAsync({
         title,
         content,
-        images: images.length > 0 ? JSON.stringify(images) : undefined,
+        images: images.length > 0 ? images : undefined,
         rating: rating || undefined,
       });
     } finally {

@@ -99,20 +99,67 @@ export async function createPost(post: typeof posts.$inferInsert) {
 export async function getPostsByUserId(userId: number, limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(posts).where(eq(posts.userId, userId)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  const result = await db.select({
+    id: posts.id,
+    userId: posts.userId,
+    title: posts.title,
+    content: posts.content,
+    images: posts.images,
+    restaurantId: posts.restaurantId,
+    rating: posts.rating,
+    likes: posts.likes,
+    comments: posts.comments,
+    createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt,
+    userName: users.name,
+  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.userId, userId)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  return result;
 }
 
 export async function getPostsForFeed(limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(posts).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  const result = await db.select({
+    id: posts.id,
+    userId: posts.userId,
+    title: posts.title,
+    content: posts.content,
+    images: posts.images,
+    restaurantId: posts.restaurantId,
+    rating: posts.rating,
+    likes: posts.likes,
+    comments: posts.comments,
+    createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt,
+    userName: users.name,
+  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  return result;
 }
 
 export async function getPostById(postId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
+  const result = await db.select({
+    id: posts.id,
+    userId: posts.userId,
+    title: posts.title,
+    content: posts.content,
+    images: posts.images,
+    restaurantId: posts.restaurantId,
+    rating: posts.rating,
+    likes: posts.likes,
+    comments: posts.comments,
+    createdAt: posts.createdAt,
+    updatedAt: posts.updatedAt,
+    userName: users.name,
+  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.id, postId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function deletePost(postId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(posts).where(eq(posts.id, postId));
 }
 
 // Restaurant queries
@@ -144,9 +191,27 @@ export async function getRestaurantsByDistrict(city: string, district: string, l
 // User Profile queries
 export async function getUserProfile(userId: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return null;
   const result = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (result.length > 0) {
+    return result[0];
+  }
+  // Create default profile if it doesn't exist
+  const defaultProfile = {
+    userId,
+    phone: null,
+    wechatId: null,
+    qqId: null,
+    avatar: null,
+    bio: null,
+    location: null,
+    latitude: null,
+    longitude: null,
+    preferences: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  return defaultProfile;
 }
 
 export async function createOrUpdateUserProfile(profile: typeof userProfiles.$inferInsert) {
@@ -183,13 +248,104 @@ export async function getUserFavorites(userId: number) {
 export async function createComment(comment: typeof comments.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.insert(comments).values(comment);
+  const result = await db.insert(comments).values(comment);
+  // Update post comment count
+  const post = await getPostById(comment.postId);
+  if (post) {
+    const newCommentCount = (post.comments || 0) + 1;
+    await db.update(posts).set({ comments: newCommentCount }).where(eq(posts.id, comment.postId));
+  }
+  return result;
 }
 
-export async function getCommentsByPostId(postId: number) {
+export async function getCommentsByPostId(postId: number, limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(comments).where(eq(comments.postId, postId)).orderBy(desc(comments.createdAt));
+  const result = await db.select({
+    id: comments.id,
+    postId: comments.postId,
+    userId: comments.userId,
+    content: comments.content,
+    likes: comments.likes,
+    createdAt: comments.createdAt,
+    updatedAt: comments.updatedAt,
+    userName: users.name,
+  }).from(comments).leftJoin(users, eq(comments.userId, users.id)).where(eq(comments.postId, postId)).orderBy(desc(comments.createdAt)).limit(limit).offset(offset);
+  return result;
+}
+
+export async function getCommentById(commentId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select({
+    id: comments.id,
+    postId: comments.postId,
+    userId: comments.userId,
+    content: comments.content,
+    likes: comments.likes,
+    createdAt: comments.createdAt,
+    updatedAt: comments.updatedAt,
+  }).from(comments).where(eq(comments.id, commentId)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function deleteComment(commentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Get comment to find postId
+  const comment = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (comment.length > 0) {
+    const postId = comment[0].postId;
+    const post = await getPostById(postId);
+    if (post) {
+      const newCommentCount = Math.max(0, (post.comments || 0) - 1);
+      await db.update(posts).set({ comments: newCommentCount }).where(eq(posts.id, postId));
+    }
+  }
+  return db.delete(comments).where(eq(comments.id, commentId));
+}
+
+// Likes queries
+export async function likePost(userId: number, postId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update post likes count
+  const post = await getPostById(postId);
+  if (!post) return null;
+  const newLikes = (post.likes || 0) + 1;
+  return db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+}
+
+export async function unlikePost(userId: number, postId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update post likes count
+  const post = await getPostById(postId);
+  if (!post) return null;
+  const newLikes = Math.max((post.likes || 0) - 1, 0);
+  return db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+}
+
+export async function likeComment(userId: number, commentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update comment likes count
+  const result = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (result.length === 0) return null;
+  const comment = result[0];
+  const newLikes = (comment.likes || 0) + 1;
+  return db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
+}
+
+export async function unlikeComment(userId: number, commentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Update comment likes count
+  const result = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (result.length === 0) return null;
+  const comment = result[0];
+  const newLikes = Math.max((comment.likes || 0) - 1, 0);
+  return db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
 }
 
 // AI Recommendations queries
@@ -216,4 +372,13 @@ export async function getRankingsByDistrict(city: string, district: string, limi
   const db = await getDb();
   if (!db) return [];
   return db.select().from(rankings).where(and(eq(rankings.city, city), eq(rankings.district, district))).orderBy(rankings.rank).limit(limit);
+}
+
+
+// User name update
+export async function updateUserName(userId: number, name: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!name || name.trim().length === 0) throw new Error("Name cannot be empty");
+  return db.update(users).set({ name: name.trim() }).where(eq(users.id, userId));
 }

@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, unique } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -121,6 +121,36 @@ export const favorites = mysqlTable("favorites", {
 
 export type Favorite = typeof favorites.$inferSelect;
 export type InsertFavorite = typeof favorites.$inferInsert;
+
+/**
+ * 帖子点赞表 - 用户对帖子的点赞记录
+ */
+export const postLikes = mysqlTable("postLikes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  postId: int("postId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  userPostUnique: unique().on(table.userId, table.postId),
+}));
+
+export type PostLike = typeof postLikes.$inferSelect;
+export type InsertPostLike = typeof postLikes.$inferInsert;
+
+/**
+ * 评论点赞表 - 用户对评论的点赞记录
+ */
+export const commentLikes = mysqlTable("commentLikes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  commentId: int("commentId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  userCommentUnique: unique().on(table.userId, table.commentId),
+}));
+
+export type CommentLike = typeof commentLikes.$inferSelect;
+export type InsertCommentLike = typeof commentLikes.$inferInsert;
 
 /**
  * AI 推荐记录表

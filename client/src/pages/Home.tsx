@@ -1,14 +1,26 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Heart, MapPin, MessageCircle, Users, Utensils, Zap } from "lucide-react";
+import { Heart, MapPin, MessageCircle, Users, Utensils, Zap, AlertCircle } from "lucide-react";
 import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Check for OAuth error in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('error');
+    if (error === 'invalid_email_domain') {
+      setErrorMessage('注册失败：只允许使用 @student.xjtlu.edu.cn 邮箱地址注册。请使用你的大学邮箱重新注册。');
+    } else if (error === 'oauth_failed') {
+      setErrorMessage('注册失败：OAuth认证失败，请稍后重试。');
+    }
+  }, []);
 
   // Auto-redirect authenticated users to feed
   useEffect(() => {
@@ -28,6 +40,24 @@ export default function Home() {
   // Show login page for unauthenticated users
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background">
+      {/* Error Banner */}
+      {errorMessage && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-3">
+          <div className="container flex items-center gap-3 text-red-700">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">{errorMessage}</p>
+            </div>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="text-red-700 hover:text-red-900 transition-colors"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border shadow-sm">
         <div className="container flex items-center justify-between h-16">
@@ -71,6 +101,9 @@ export default function Home() {
             </h1>
             <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
               发现美食，分享快乐。与朋友一起探索城市最好的餐厅，分享你的美食故事。
+            </p>
+            <p className="text-sm text-foreground/50">
+              💡 仅限西交利物浦大学学生使用（需要 @student.xjtlu.edu.cn 邮箱）
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
               <Button 

@@ -8,11 +8,14 @@ import { Mail, Phone, User, LogOut, Heart, FileText } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { mockUserProfile, mockFavorites, mockPosts } from "@/lib/mockData";
+import { formatDistanceToNow } from "date-fns";
+import { zhCN } from "date-fns/locale";
 
 export default function Profile() {
   const { user, loading, isAuthenticated, logout } = useAuth();
   const [, navigate] = useLocation();
+  const [name, setName] = useState("");
+  const [isEditingName, setIsEditingName] = useState(false);
   const [phone, setPhone] = useState("");
   const [wechatId, setWechatId] = useState("");
   const [qqId, setQqId] = useState("");
@@ -25,10 +28,45 @@ export default function Profile() {
     }
   }, [isAuthenticated, loading, navigate]);
 
-  // Use mock data for demo
-  const profile = mockUserProfile;
-  const favorites = mockFavorites;
-  const userPosts = mockPosts.filter(p => p.userId === user?.id);
+  // Fetch user profile
+  const { data: profile, isLoading: isLoadingProfile } = trpc.profile.getMe.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  // Fetch user's posts
+  const { data: userPosts, isLoading: isLoadingPosts } = trpc.posts.getByUser.useQuery(
+    { userId: user?.id || 0, limit: 100, offset: 0 },
+    { enabled: isAuthenticated && user?.id !== undefined }
+  );
+
+  // Fetch user's favorites
+  const { data: favorites, isLoading: isLoadingFavorites } = trpc.favorites.getMyFavorites.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  // Initialize form with profile data
+  useEffect(() => {
+    if (user?.name) {
+      setName(user.name);
+    }
+    if (profile) {
+      setPhone(profile.phone || "");
+      setWechatId(profile.wechatId || "");
+      setQqId(profile.qqId || "");
+    }
+  }, [profile, user?.name]);
+
+  const updateNameMutation = trpc.profile.updateName.useMutation({
+    onSuccess: () => {
+      toast.success("昵称已更新");
+      setIsEditingName(false);
+    },
+    onError: (error) => {
+      toast.error("更新失败：" + error.message);
+    },
+  });
 
   const updateProfileMutation = trpc.profile.update.useMutation({
     onSuccess: () => {
@@ -38,6 +76,19 @@ export default function Profile() {
       toast.error("更新失败：" + error.message);
     },
   });
+
+  const handleSaveName = async () => {
+    if (!name.trim()) {
+      toast.error("昵称不能为空");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateNameMutation.mutateAsync(name.trim());
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
@@ -103,11 +154,50 @@ export default function Profile() {
                 </span>
               </div>
               <div className="flex-1">
-                <h1 className="text-3xl font-bold text-foreground">{user?.name}</h1>
-                <p className="text-foreground/70">用户ID: {user?.id}</p>
+                {isEditingName ? (
+                  <div className="flex gap-2 mb-2">
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="输入新昵称"
+                      maxLength={50}
+                      className="text-lg font-bold"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveName}
+                      disabled={isSaving}
+                    >
+                      保存
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setIsEditingName(false);
+                        setName(user?.name || "");
+                      }}
+                      disabled={isSaving}
+                    >
+                      取消
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 mb-2">
+                    <h1 className="text-3xl font-bold text-foreground">{user?.name || "用户"}</h1>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsEditingName(true)}
+                    >
+                      编辑
+                    </Button>
+                  </div>
+                )}
+                <p className="text-foreground/70">{user?.email || "未绑定邮箱"}</p>
               </div>
               <Button 
-                variant="destructive"
+                variant="outline"
                 onClick={handleLogout}
                 className="gap-2"
               >
@@ -115,25 +205,47 @@ export default function Profile() {
                 退出登录
               </Button>
             </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center p-4 bg-muted/30 rounded-lg">
+                <p className="text-2xl font-bold text-primary">{userPosts?.length || 0}</p>
+                <p className="text-sm text-foreground/60">发布</p>
+              </div>
+              <div className="text-center p-4 bg-muted/30 rounded-lg">
+                <p className="text-2xl font-bold text-primary">{favorites?.length || 0}</p>
+                <p className="text-sm text-foreground/60">收藏</p>
+              </div>
+              <div className="text-center p-4 bg-muted/30 rounded-lg">
+                <p className="text-2xl font-bold text-primary">0</p>
+                <p className="text-sm text-foreground/60">粉丝</p>
+              </div>
+            </div>
           </Card>
 
           {/* Tabs */}
-          <Tabs defaultValue="account" className="space-y-6">
+          <Tabs defaultValue="info" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="account">账号信息</TabsTrigger>
-              <TabsTrigger value="favorites">我的收藏</TabsTrigger>
-              <TabsTrigger value="posts">我的发布</TabsTrigger>
+              <TabsTrigger value="info">个人信息</TabsTrigger>
+              <TabsTrigger value="posts" className="gap-2">
+                <FileText className="w-4 h-4" />
+                我的发布
+              </TabsTrigger>
+              <TabsTrigger value="favorites" className="gap-2">
+                <Heart className="w-4 h-4" />
+                我的收藏
+              </TabsTrigger>
             </TabsList>
 
-            {/* Account Tab */}
-            <TabsContent value="account" className="space-y-6">
-              <Card className="p-8">
-                <h2 className="text-2xl font-bold text-foreground mb-6">账号信息</h2>
-
+            {/* Info Tab */}
+            <TabsContent value="info" className="space-y-6">
+              <Card className="p-6">
+                <h2 className="text-xl font-bold text-foreground mb-6">联系信息</h2>
+                
                 {/* Email */}
                 <div className="mb-6">
-                  <label className="block text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                    <Mail className="w-4 h-4" />
+                  <label className="block text-sm font-semibold text-foreground mb-2">
+                    <Mail className="w-4 h-4 inline mr-2" />
                     邮箱
                   </label>
                   <Input
@@ -142,51 +254,50 @@ export default function Profile() {
                     disabled
                     className="bg-muted/50 border-border"
                   />
-                  <p className="text-xs text-foreground/60 mt-1">邮箱已验证，无法修改</p>
+                  <p className="text-xs text-foreground/60 mt-1">邮箱不可修改</p>
                 </div>
 
                 {/* Phone */}
                 <div className="mb-6">
-                  <label className="block text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-                    <Phone className="w-4 h-4" />
+                  <label className="block text-sm font-semibold text-foreground mb-2">
+                    <Phone className="w-4 h-4 inline mr-2" />
                     手机号
                   </label>
                   <Input
                     type="tel"
-                    placeholder="输入你的手机号"
+                    placeholder="输入手机号"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="bg-muted/50 border-border"
                   />
                 </div>
 
-                {/* WeChat ID */}
+                {/* WeChat */}
                 <div className="mb-6">
                   <label className="block text-sm font-semibold text-foreground mb-2">
-                    微信ID
+                    微信号
                   </label>
                   <Input
-                    placeholder="输入你的微信ID"
+                    placeholder="输入微信号"
                     value={wechatId}
                     onChange={(e) => setWechatId(e.target.value)}
                     className="bg-muted/50 border-border"
                   />
                 </div>
 
-                {/* QQ ID */}
+                {/* QQ */}
                 <div className="mb-6">
                   <label className="block text-sm font-semibold text-foreground mb-2">
                     QQ号
                   </label>
                   <Input
-                    placeholder="输入你的QQ号"
+                    placeholder="输入QQ号"
                     value={qqId}
                     onChange={(e) => setQqId(e.target.value)}
                     className="bg-muted/50 border-border"
                   />
                 </div>
 
-                {/* Save Button */}
                 <Button 
                   onClick={handleSaveProfile}
                   disabled={isSaving}
@@ -195,104 +306,86 @@ export default function Profile() {
                   {isSaving ? "保存中..." : "保存信息"}
                 </Button>
               </Card>
-
-              {/* Account Stats */}
-              <div className="grid md:grid-cols-3 gap-4">
-                <Card className="p-6 text-center">
-                  <p className="text-3xl font-bold text-primary mb-2">
-                    {userPosts?.length || 0}
-                  </p>
-                  <p className="text-sm text-foreground/70">发布数</p>
-                </Card>
-                <Card className="p-6 text-center">
-                  <p className="text-3xl font-bold text-secondary mb-2">
-                    {favorites?.length || 0}
-                  </p>
-                  <p className="text-sm text-foreground/70">收藏数</p>
-                </Card>
-                <Card className="p-6 text-center">
-                  <p className="text-3xl font-bold text-accent mb-2">
-                    {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : "N/A"}
-                  </p>
-                  <p className="text-sm text-foreground/70">加入时间</p>
-                </Card>
-              </div>
-            </TabsContent>
-
-            {/* Favorites Tab */}
-            <TabsContent value="favorites">
-              <Card className="p-8">
-                <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
-                  <Heart className="w-6 h-6 text-secondary" />
-                  我的收藏
-                </h2>
-
-                {favorites && favorites.length > 0 ? (
-                  <div className="space-y-4">
-                    {favorites.map((fav) => {
-                      const restaurant = mockPosts.find(p => p.restaurantId === fav.restaurantId);
-                      return (
-                      <div key={fav.id} className="p-4 border border-border rounded-lg hover:bg-muted/30 transition-colors">
-                        <p className="font-semibold text-foreground">
-                          {restaurant ? restaurant.title : `餐厅 #${fav.restaurantId}`}
-                        </p>
-                        <p className="text-sm text-foreground/70 mt-1">
-                          收藏于 {new Date(fav.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <Heart className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                    <p className="text-foreground/70 mb-4">还没有收藏任何餐厅</p>
-                    <Button 
-                      onClick={() => navigate("/restaurants")}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90"
-                    >
-                      去浏览餐厅
-                    </Button>
-                  </div>
-                )}
-              </Card>
             </TabsContent>
 
             {/* Posts Tab */}
-            <TabsContent value="posts">
-              <Card className="p-8">
-                <h2 className="text-2xl font-bold text-foreground mb-6 flex items-center gap-2">
-                  <FileText className="w-6 h-6 text-primary" />
-                  我的发布
-                </h2>
-
-                {userPosts && userPosts.length > 0 ? (
-                  <div className="space-y-4">
-                    {userPosts.map((post) => (
-                      <div key={post.id} className="p-4 border border-border rounded-lg hover:bg-muted/30 transition-colors">
-                        <h3 className="font-semibold text-foreground">{post.title}</h3>
-                        <p className="text-sm text-foreground/70 mt-1 line-clamp-2">{post.content}</p>
-                        <div className="flex items-center gap-4 mt-3 text-sm text-foreground/60">
-                          <span>❤️ {post.likes}</span>
-                          <span>💬 {post.comments}</span>
-                          <span>{new Date(post.createdAt).toLocaleDateString()}</span>
-                        </div>
+            <TabsContent value="posts" className="space-y-4">
+              {isLoadingPosts ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
+                </div>
+              ) : userPosts && userPosts.length > 0 ? (
+                userPosts.map((post: any) => (
+                  <Card 
+                    key={post.id} 
+                    className="p-6 cursor-pointer hover:shadow-md transition-shadow"
+                    onClick={() => navigate(`/post/${post.id}`)}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-foreground">{post.title}</h3>
+                        <p className="text-sm text-foreground/60 mt-1">
+                          {formatDistanceToNow(new Date(post.createdAt), { 
+                            addSuffix: true,
+                            locale: zhCN 
+                          })}
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                    <p className="text-foreground/70 mb-4">还没有发布过内容</p>
-                    <Button 
-                      onClick={() => navigate("/publish")}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      {post.rating && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-lg font-bold text-secondary">★</span>
+                          <span className="font-semibold text-foreground">{post.rating}</span>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-foreground/70 line-clamp-2">{post.content}</p>
+                  </Card>
+                ))
+              ) : (
+                <Card className="p-12 text-center">
+                  <p className="text-foreground/70 mb-4">还没有发布过内容</p>
+                  <Button 
+                    onClick={() => navigate("/publish")}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    去发布
+                  </Button>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* Favorites Tab */}
+            <TabsContent value="favorites" className="space-y-4">
+              {isLoadingFavorites ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
+                </div>
+              ) : favorites && favorites.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {favorites.map((favorite: any) => (
+                    <Card 
+                      key={favorite.id} 
+                      className="p-6 cursor-pointer hover:shadow-md transition-shadow"
+                      onClick={() => navigate(`/restaurant/${favorite.restaurantId}`)}
                     >
-                      去发布
-                    </Button>
-                  </div>
-                )}
-              </Card>
+                      <h3 className="text-lg font-bold text-foreground mb-2">餐厅 #{favorite.restaurantId}</h3>
+                      <p className="text-sm text-foreground/60">
+                        已收藏
+                      </p>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Card className="p-12 text-center">
+                  <p className="text-foreground/70 mb-4">还没有收藏过餐厅</p>
+                  <Button 
+                    onClick={() => navigate("/restaurants")}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    去浏览餐厅
+                  </Button>
+                </Card>
+              )}
             </TabsContent>
           </Tabs>
         </div>

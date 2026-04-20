@@ -217,6 +217,16 @@ export const appRouter = router({
 
   // Likes router
   likes: router({
+    getMyLikedPosts: protectedProcedure
+      .query(async ({ ctx }) => {
+        return db.getMyLikedPosts(ctx.user.id);
+      }),
+
+    getMyLikedComments: protectedProcedure
+      .query(async ({ ctx }) => {
+        return db.getMyLikedComments(ctx.user.id);
+      }),
+
     likePost: protectedProcedure
       .input(z.number())
       .mutation(async ({ ctx, input }) => {
@@ -227,6 +237,18 @@ export const appRouter = router({
       .input(z.number())
       .mutation(async ({ ctx, input }) => {
         return db.unlikePost(ctx.user.id, input);
+      }),
+
+    likeComment: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ ctx, input }) => {
+        return db.likeComment(ctx.user.id, input);
+      }),
+    
+    unlikeComment: protectedProcedure
+      .input(z.number())
+      .mutation(async ({ ctx, input }) => {
+        return db.unlikeComment(ctx.user.id, input);
       }),
   }),
 

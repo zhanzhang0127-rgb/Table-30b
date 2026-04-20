@@ -73,37 +73,6 @@ export default function Restaurants() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-16">
-          <div className="flex items-center gap-2">
-            <img 
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663506480782/XzEWDxgSS5RTJYj5etncA4/chileoma-logo-J5D7zC5YTWiDqDhd7fMXt5.webp" 
-              alt="吃了吗 Logo" 
-              className="h-10 w-10"
-            />
-            <span className="text-xl font-bold text-primary">吃了吗</span>
-          </div>
-          
-          <nav className="hidden md:flex items-center gap-8">
-            <a href="/feed" className="text-foreground/70 hover:text-foreground transition-colors">首页</a>
-            <a href="/restaurants" className="text-foreground font-medium">餐厅</a>
-            <a href="/rankings" className="text-foreground/70 hover:text-foreground transition-colors">排行榜</a>
-            <a href="/ai-chat" className="text-foreground/70 hover:text-foreground transition-colors">AI助手</a>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => navigate("/profile")}
-            >
-              个人中心
-            </Button>
-          </div>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="container py-8">
         <div className="max-w-5xl mx-auto">

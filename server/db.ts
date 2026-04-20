@@ -1,6 +1,6 @@
 import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, posts, restaurants, comments, userProfiles, favorites, aiRecommendations, rankings } from "../drizzle/schema";
+import { InsertUser, users, posts, restaurants, comments, userProfiles, favorites, aiRecommendations, rankings, postLikes, commentLikes } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -306,46 +306,86 @@ export async function deleteComment(commentId: number) {
 }
 
 // Likes queries
+// ===== 点赞功能（持久化到 postLikes/commentLikes 表） =====
+
 export async function likePost(userId: number, postId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  // Update post likes count
   const post = await getPostById(postId);
   if (!post) return null;
+  // Check if already liked
+  const existing = await db.select().from(postLikes).where(and(eq(postLikes.userId, userId), eq(postLikes.postId, postId))).limit(1);
+  if (existing.length > 0) return { alreadyLiked: true };
+  // Insert like record
+  await db.insert(postLikes).values({ userId, postId });
+  // Update post likes count
   const newLikes = (post.likes || 0) + 1;
-  return db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+  await db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+  return { success: true };
 }
 
 export async function unlikePost(userId: number, postId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  // Update post likes count
   const post = await getPostById(postId);
   if (!post) return null;
+  // Check if liked
+  const existing = await db.select().from(postLikes).where(and(eq(postLikes.userId, userId), eq(postLikes.postId, postId))).limit(1);
+  if (existing.length === 0) return { notLiked: true };
+  // Delete like record
+  await db.delete(postLikes).where(and(eq(postLikes.userId, userId), eq(postLikes.postId, postId)));
+  // Update post likes count
   const newLikes = Math.max((post.likes || 0) - 1, 0);
-  return db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+  await db.update(posts).set({ likes: newLikes }).where(eq(posts.id, postId));
+  return { success: true };
+}
+
+export async function getMyLikedPosts(userId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.select({ postId: postLikes.postId }).from(postLikes).where(eq(postLikes.userId, userId));
+  return result.map(r => r.postId);
+}
+
+export async function getMyLikedComments(userId: number): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.select({ commentId: commentLikes.commentId }).from(commentLikes).where(eq(commentLikes.userId, userId));
+  return result.map(r => r.commentId);
 }
 
 export async function likeComment(userId: number, commentId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  // Update comment likes count
   const result = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
   if (result.length === 0) return null;
+  // Check if already liked
+  const existing = await db.select().from(commentLikes).where(and(eq(commentLikes.userId, userId), eq(commentLikes.commentId, commentId))).limit(1);
+  if (existing.length > 0) return { alreadyLiked: true };
+  // Insert like record
+  await db.insert(commentLikes).values({ userId, commentId });
+  // Update comment likes count
   const comment = result[0];
   const newLikes = (comment.likes || 0) + 1;
-  return db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
+  await db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
+  return { success: true };
 }
 
 export async function unlikeComment(userId: number, commentId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  // Update comment likes count
   const result = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
   if (result.length === 0) return null;
+  // Check if liked
+  const existing = await db.select().from(commentLikes).where(and(eq(commentLikes.userId, userId), eq(commentLikes.commentId, commentId))).limit(1);
+  if (existing.length === 0) return { notLiked: true };
+  // Delete like record
+  await db.delete(commentLikes).where(and(eq(commentLikes.userId, userId), eq(commentLikes.commentId, commentId)));
+  // Update comment likes count
   const comment = result[0];
   const newLikes = Math.max((comment.likes || 0) - 1, 0);
-  return db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
+  await db.update(comments).set({ likes: newLikes }).where(eq(comments.id, commentId));
+  return { success: true };
 }
 
 // AI Recommendations queries

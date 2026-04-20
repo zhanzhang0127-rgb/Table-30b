@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 export function ResponsiveNav() {
   const [location, navigate] = useLocation();
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   // Don't show nav on home/landing page
   if (location === "/") return null;
@@ -83,16 +83,49 @@ export function ResponsiveNav() {
         </div>
       </nav>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation - with publish button in center */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-border shadow-lg">
-        <div className="flex items-center justify-around h-16">
-          {navItems.map((item) => {
+        <div className="flex items-center justify-around h-16 relative">
+          {/* Left nav items: 社区, 餐厅 */}
+          {navItems.slice(0, 2).map((item) => {
             const Icon = item.icon;
             return (
               <button
                 key={item.href}
                 onClick={() => navigate(item.href)}
-                className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${
+                className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors ${
+                  isActive(item.href)
+                    ? "text-primary"
+                    : "text-foreground/50 hover:text-foreground"
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+
+          {/* Center: Publish Button (raised) */}
+          {isAuthenticated && (
+            <button
+              onClick={() => navigate("/publish")}
+              className="flex flex-col items-center justify-center flex-1 h-full -mt-4"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
+                <Plus className="w-6 h-6" />
+              </div>
+              <span className="text-[10px] font-medium text-primary mt-0.5">发布</span>
+            </button>
+          )}
+
+          {/* Right nav items: AI助手, 个人 */}
+          {navItems.slice(3, 5).map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.href}
+                onClick={() => navigate(item.href)}
+                className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors ${
                   isActive(item.href)
                     ? "text-primary"
                     : "text-foreground/50 hover:text-foreground"

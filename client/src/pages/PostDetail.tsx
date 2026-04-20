@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Heart, MessageCircle, Loader2, Trash2, X, ZoomIn } from "lucide-react";
+import { Heart, MessageCircle, Loader2, Trash2, X, ZoomIn, ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -243,8 +243,16 @@ export default function PostDetail() {
   return (
     <div className="min-h-screen bg-background">
       {/* Main Content */}
-      <main className="container py-8">
+      <main className="container py-6">
         <div className="max-w-2xl mx-auto space-y-6">
+          {/* Back Button */}
+          <button
+            onClick={() => navigate("/feed")}
+            className="flex items-center gap-2 text-foreground/60 hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-medium">返回社区</span>
+          </button>
           {/* Post Card */}
           <Card className="overflow-hidden">
             {/* Post Header */}
@@ -292,37 +300,64 @@ export default function PostDetail() {
             </div>
 
             {/* Post Images */}
-            {post.images && (
-              <div className="bg-muted/30 p-4">
-                <div className="grid grid-cols-2 gap-2">
-                  {(typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images).map((img: string, idx: number) => (
-                    <div key={idx} className="relative group cursor-pointer">
-                      <img 
-                        src={img} 
-                        alt={`Post image ${idx + 1}`}
-                        className="w-full h-48 object-cover rounded-lg"
+            {post.images && (() => {
+              const imageList: string[] = typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images;
+              if (!imageList || imageList.length === 0) return null;
+              return (
+                <div className="bg-muted/30 p-4">
+                  <div className={`grid gap-2 ${imageList.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    {imageList.map((img: string, idx: number) => (
+                      <div 
+                        key={idx} 
+                        className="relative group cursor-pointer overflow-hidden rounded-lg"
                         onClick={() => setEnlargedImage(img)}
-                      />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-lg transition-all flex items-center justify-center">
-                        <ZoomIn className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      >
+                        <img 
+                          src={img} 
+                          alt={`帖子图片 ${idx + 1}`}
+                          className={`w-full object-cover rounded-lg transition-transform duration-200 group-hover:scale-105 ${imageList.length === 1 ? 'max-h-96' : 'h-48'}`}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-all flex items-center justify-center">
+                          <div className="bg-black/50 rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <ZoomIn className="w-5 h-5 text-white" />
+                          </div>
+                        </div>
+                        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          点击放大
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
-            {/* Image Lightbox */}
+            {/* Image Lightbox - Full Screen */}
             {enlargedImage && (
-              <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setEnlargedImage(null)}>
-                <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-                  <img src={enlargedImage} alt="Enlarged" className="w-full h-full object-contain rounded-lg" />
-                  <button
+              <div 
+                className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center"
+                onClick={() => setEnlargedImage(null)}
+              >
+                {/* Close button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEnlargedImage(null); }}
+                  className="absolute top-4 right-4 z-[101] bg-white/20 hover:bg-white/40 text-white rounded-full p-3 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+                {/* Hint text */}
+                <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/60 text-sm z-[101]">点击任意位置关闭</p>
+                {/* Image container */}
+                <div 
+                  className="w-full h-full flex items-center justify-center p-4 sm:p-8"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <img 
+                    src={enlargedImage} 
+                    alt="放大图片" 
+                    className="max-w-full max-h-full object-contain select-none"
                     onClick={() => setEnlargedImage(null)}
-                    className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 transition-colors"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
+                  />
                 </div>
               </div>
             )}

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ImagePlus, Loader2, X } from "lucide-react";
+import { ImagePlus, Loader2, X, ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -87,8 +87,17 @@ export default function Publish() {
   return (
     <div className="min-h-screen bg-background">
       {/* Main Content */}
-      <main className="container py-8">
+      <main className="container py-6">
         <div className="max-w-2xl mx-auto">
+          {/* Back Button */}
+          <button
+            onClick={() => navigate("/feed")}
+            className="flex items-center gap-2 text-foreground/60 hover:text-foreground mb-4 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-medium">返回社区</span>
+          </button>
+
           <Card className="p-8">
             <h1 className="text-3xl font-bold text-foreground mb-8">分享你的美食故事</h1>
 

@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Heart, MessageCircle, Share2, Loader2, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Share2, Loader2, Trash2, X, ZoomIn } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -18,6 +18,7 @@ export default function PostDetail() {
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [likedPostId, setLikedPostId] = useState<number | null>(null);
   const [likedComments, setLikedComments] = useState<Set<number>>(new Set());
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
 
   // Extract postId from URL
   useEffect(() => {
@@ -330,13 +331,33 @@ export default function PostDetail() {
               <div className="bg-muted/30 p-4">
                 <div className="grid grid-cols-2 gap-2">
                   {(typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images).map((img: string, idx: number) => (
-                    <img 
-                      key={idx}
-                      src={img} 
-                      alt={`Post image ${idx + 1}`}
-                      className="w-full h-48 object-cover rounded-lg"
-                    />
+                    <div key={idx} className="relative group cursor-pointer">
+                      <img 
+                        src={img} 
+                        alt={`Post image ${idx + 1}`}
+                        className="w-full h-48 object-cover rounded-lg"
+                        onClick={() => setEnlargedImage(img)}
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 rounded-lg transition-all flex items-center justify-center">
+                        <ZoomIn className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Image Lightbox */}
+            {enlargedImage && (
+              <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setEnlargedImage(null)}>
+                <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                  <img src={enlargedImage} alt="Enlarged" className="w-full h-full object-contain rounded-lg" />
+                  <button
+                    onClick={() => setEnlargedImage(null)}
+                    className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
                 </div>
               </div>
             )}
@@ -350,6 +371,7 @@ export default function PostDetail() {
                   className={`flex items-center gap-2 transition-colors group ${
                     likedPostId === postId ? "text-secondary" : "hover:text-primary"
                   }`}
+                  title="点赞"
                 >
                   <Heart 
                     className="w-5 h-5 group-hover:fill-current" 
@@ -357,19 +379,23 @@ export default function PostDetail() {
                   />
                   <span className="text-sm">{post.likes || 0}</span>
                 </button>
-                <button className="flex items-center gap-2 hover:text-primary transition-colors">
+                <button 
+                  onClick={() => {
+                    const element = document.getElementById("comments-section");
+                    element?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="flex items-center gap-2 hover:text-primary transition-colors"
+                  title="查看评论"
+                >
                   <MessageCircle className="w-5 h-5" />
                   <span className="text-sm">{post.comments || 0}</span>
-                </button>
-                <button className="flex items-center gap-2 hover:text-primary transition-colors">
-                  <Share2 className="w-5 h-5" />
                 </button>
               </div>
             </div>
           </Card>
 
           {/* Comment Section */}
-          <Card className="p-6">
+          <Card className="p-6" id="comments-section">
             <h2 className="text-lg font-bold text-foreground mb-4">评论</h2>
 
             {/* Comment Input */}

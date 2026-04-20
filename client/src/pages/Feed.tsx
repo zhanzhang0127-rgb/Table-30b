@@ -126,6 +126,10 @@ export default function Feed() {
 
   const handleLikePost = (postId: number, e: React.MouseEvent) => {
     e.stopPropagation();
+    // 防止重复点赞 - 检查是否正在进行中
+    if (likePostMutation.isPending || unlikePostMutation.isPending) {
+      return;
+    }
     if (likedPosts.has(postId)) {
       unlikePostMutation.mutate(postId);
     } else {
@@ -135,6 +139,10 @@ export default function Feed() {
 
   const handleToggleFavorite = (restaurantId: number, e: React.MouseEvent) => {
     e.stopPropagation();
+    // 防止重复收藏 - 检查是否正在进行中
+    if (addFavoriteMutation.isPending || removeFavoriteMutation.isPending) {
+      return;
+    }
     if (favoritePosts.has(restaurantId)) {
       removeFavoriteMutation.mutate(restaurantId);
     } else {

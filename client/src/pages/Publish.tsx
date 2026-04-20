@@ -119,27 +119,31 @@ export default function Publish() {
             {/* Title Input */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                标题 *
+                标题 * <span className="text-xs text-foreground/50 font-normal">（如：某餐厅的招牌菜真绝了）</span>
               </label>
               <Input
-                placeholder="给你的分享起个吸引人的标题..."
+                placeholder="例如：XXX餐厅的招牌菜、这家店的环境超舒服..."
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                maxLength={100}
                 className="bg-muted/50 border-border"
               />
+              <p className="text-xs text-foreground/50 mt-1">{title.length}/100 字符</p>
             </div>
 
             {/* Content Textarea */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                内容 *
+                内容 * <span className="text-xs text-foreground/50 font-normal">（分享你的美食体验和感受）</span>
               </label>
               <Textarea
-                placeholder="分享你的美食体验、餐厅推荐、烹饪心得..."
+                placeholder="例如：这家店的菜品很新鲜，特别推荐他们的...\n环境很舒适，适合和朋友聚餐...\n价格也很合理，性价比很高..."
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
+                maxLength={1000}
                 className="bg-muted/50 border-border min-h-40 resize-none"
               />
+              <p className="text-xs text-foreground/50 mt-1">{content.length}/1000 字符</p>
             </div>
 
             {/* Rating */}

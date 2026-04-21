@@ -447,3 +447,56 @@ export async function updateUserName(userId: number, name: string) {
   if (!name || name.trim().length === 0) throw new Error("Name cannot be empty");
   return db.update(users).set({ name: name.trim() }).where(eq(users.id, userId));
 }
+
+// ==================== Admin queries ====================
+
+export async function getAllRestaurantsAdmin(limit: number = 100, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(restaurants).orderBy(desc(restaurants.createdAt)).limit(limit).offset(offset);
+}
+
+export async function createRestaurantAdmin(data: typeof restaurants.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.insert(restaurants).values(data);
+}
+
+export async function updateRestaurant(id: number, data: Partial<typeof restaurants.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(restaurants).set({ ...data, updatedAt: new Date() }).where(eq(restaurants.id, id));
+}
+
+export async function deleteRestaurant(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(restaurants).where(eq(restaurants.id, id));
+}
+
+export async function updateRestaurantStatus(id: number, status: "published" | "pending" | "rejected") {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(restaurants).set({ status, updatedAt: new Date() }).where(eq(restaurants.id, id));
+}
+
+export async function getAdminStats() {
+  const db = await getDb();
+  if (!db) return { totalUsers: 0, totalPosts: 0, totalRestaurants: 0, pendingRestaurants: 0 };
+  const [usersCount] = await db.select({ count: users.id }).from(users);
+  const [postsCount] = await db.select({ count: posts.id }).from(posts);
+  const [restaurantsCount] = await db.select({ count: restaurants.id }).from(restaurants);
+  const [pendingCount] = await db.select({ count: restaurants.id }).from(restaurants).where(eq(restaurants.status, 'pending'));
+  return {
+    totalUsers: usersCount?.count ?? 0,
+    totalPosts: postsCount?.count ?? 0,
+    totalRestaurants: restaurantsCount?.count ?? 0,
+    pendingRestaurants: pendingCount?.count ?? 0,
+  };
+}
+
+export async function getAllUsers(limit: number = 100, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: users.id, name: users.name, email: users.email, role: users.role, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+}

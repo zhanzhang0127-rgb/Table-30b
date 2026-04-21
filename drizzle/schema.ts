@@ -64,6 +64,8 @@ export const restaurants = mysqlTable("restaurants", {
   averageRating: varchar("averageRating", { length: 10 }).default("0"),
   totalRatings: int("totalRatings").default(0),
   priceLevel: varchar("priceLevel", { length: 50 }), // 价格段：便宜、中端、高端
+  status: mysqlEnum("status", ["published", "pending", "rejected"]).default("published").notNull(), // 状态
+  submittedBy: int("submittedBy"), // 提交者用户ID（用户提交时填写）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

@@ -7,6 +7,12 @@ import * as db from "./db";
 import { TRPCError } from "@trpc/server";
 import { storagePut } from "./storage";
 
+// Admin-only procedure middleware
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
+  return next({ ctx });
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -273,6 +279,97 @@ export const appRouter = router({
         limit: z.number().default(20),
       }))
       .query(({ input }) => db.getRankingsByDistrict(input.city, input.district, input.limit)),
+  }),
+
+  // Admin router
+  admin: router({
+    // 数据概览
+    getStats: adminProcedure
+      .query(() => db.getAdminStats()),
+
+    // 用户管理
+    getUsers: adminProcedure
+      .input(z.object({ limit: z.number().default(100), offset: z.number().default(0) }))
+      .query(({ input }) => db.getAllUsers(input.limit, input.offset)),
+
+    // 餐厅管理
+    getRestaurants: adminProcedure
+      .input(z.object({ limit: z.number().default(100), offset: z.number().default(0) }))
+      .query(({ input }) => db.getAllRestaurantsAdmin(input.limit, input.offset)),
+
+    createRestaurant: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        cuisine: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        district: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        phone: z.string().optional(),
+        image: z.string().optional(),
+        priceLevel: z.string().optional(),
+        status: z.enum(['published', 'pending', 'rejected']).default('published'),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Handle base64 image upload
+        let imageUrl = input.image;
+        if (imageUrl && imageUrl.startsWith('data:')) {
+          const parts = imageUrl.split(',');
+          const base64Data = parts[1];
+          if (base64Data) {
+            const buffer = Buffer.from(base64Data, 'base64');
+            const key = `restaurants/${Date.now()}.jpg`;
+            const { url } = await storagePut(key, buffer, 'image/jpeg');
+            imageUrl = url;
+          }
+        }
+        return db.createRestaurantAdmin({ ...input, image: imageUrl, status: input.status });
+      }),
+
+    updateRestaurant: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).optional(),
+        description: z.string().optional(),
+        cuisine: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        district: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        phone: z.string().optional(),
+        image: z.string().optional(),
+        priceLevel: z.string().optional(),
+        status: z.enum(['published', 'pending', 'rejected']).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        // Handle base64 image upload
+        if (data.image && data.image.startsWith('data:')) {
+          const parts = data.image.split(',');
+          const base64Data = parts[1];
+          if (base64Data) {
+            const buffer = Buffer.from(base64Data, 'base64');
+            const key = `restaurants/${Date.now()}.jpg`;
+            const { url } = await storagePut(key, buffer, 'image/jpeg');
+            data.image = url;
+          }
+        }
+        return db.updateRestaurant(id, data);
+      }),
+
+    deleteRestaurant: adminProcedure
+      .input(z.number())
+      .mutation(({ input }) => db.deleteRestaurant(input)),
+
+    updateRestaurantStatus: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(['published', 'pending', 'rejected']),
+      }))
+      .mutation(({ input }) => db.updateRestaurantStatus(input.id, input.status)),
   }),
 
   aiRecommendations: router({

@@ -6,3 +6,4 @@
 - 2026-04-11: 实现人员登录功能
 - 2026-04-11: 实现图片及文字上传功能
 A web interface for catering options specifically designed for minority groups of college students.
+- 2026-04-21: 社区界面优化，修复点赞功能，支持图片放大查看，优化导航结构及发帖提示

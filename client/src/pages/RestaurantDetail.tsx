@@ -59,23 +59,6 @@ export default function RestaurantDetail() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-16">
-              <button
-                onClick={() => window.history.back()}
-                className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span>返回</span>
-              </button>
-          
-          <span className="text-lg font-bold text-primary">餐厅详情</span>
-          
-          <div className="w-12"></div>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="container py-6">
         <div className="max-w-2xl mx-auto space-y-6">

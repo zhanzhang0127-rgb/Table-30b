@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Heart, MessageCircle, Share2, Loader2, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Loader2, Trash2, X, ZoomIn, ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -16,8 +16,7 @@ export default function PostDetail() {
   const [postId, setPostId] = useState<number | null>(null);
   const [commentText, setCommentText] = useState("");
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
-  const [likedPostId, setLikedPostId] = useState<number | null>(null);
-  const [likedComments, setLikedComments] = useState<Set<number>>(new Set());
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
 
   // Extract postId from URL
   useEffect(() => {
@@ -47,6 +46,21 @@ export default function PostDetail() {
     { enabled: postId !== null && isAuthenticated }
   );
 
+  // Fetch user's liked posts from backend (persistent)
+  const { data: myLikedPosts } = trpc.likes.getMyLikedPosts.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  // Fetch user's liked comments from backend (persistent)
+  const { data: myLikedComments } = trpc.likes.getMyLikedComments.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  const likedPostsSet = new Set(myLikedPosts as number[] || []);
+  const likedCommentsSet = new Set(myLikedComments as number[] || []);
+
   // Create comment mutation
   const createCommentMutation = trpc.comments.create.useMutation({
     onSuccess: () => {
@@ -60,11 +74,12 @@ export default function PostDetail() {
     },
   });
 
+  const utils = trpc.useUtils();
+
   // Like post mutation
   const likePostMutation = trpc.likes.likePost.useMutation({
     onSuccess: () => {
-      setLikedPostId(postId);
-      toast.success("已点赞");
+      utils.likes.getMyLikedPosts.invalidate();
       refetchPost();
     },
     onError: (error) => {
@@ -75,8 +90,7 @@ export default function PostDetail() {
   // Unlike post mutation
   const unlikePostMutation = trpc.likes.unlikePost.useMutation({
     onSuccess: () => {
-      setLikedPostId(null);
-      toast.success("已取消点赞");
+      utils.likes.getMyLikedPosts.invalidate();
       refetchPost();
     },
     onError: (error) => {
@@ -86,9 +100,8 @@ export default function PostDetail() {
 
   // Like comment mutation
   const likeCommentMutation = trpc.comments.like.useMutation({
-    onSuccess: (_, variables) => {
-      setLikedComments(prev => new Set(prev).add(variables));
-      toast.success("已点赞");
+    onSuccess: () => {
+      utils.likes.getMyLikedComments.invalidate();
       refetchComments();
     },
     onError: (error) => {
@@ -98,13 +111,8 @@ export default function PostDetail() {
 
   // Unlike comment mutation
   const unlikeCommentMutation = trpc.comments.unlike.useMutation({
-    onSuccess: (_, variables) => {
-      setLikedComments(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(variables);
-        return newSet;
-      });
-      toast.success("已取消点赞");
+    onSuccess: () => {
+      utils.likes.getMyLikedComments.invalidate();
       refetchComments();
     },
     onError: (error) => {
@@ -165,8 +173,8 @@ export default function PostDetail() {
   };
 
   const handleLikePost = () => {
-    if (!postId) return;
-    if (likedPostId === postId) {
+    if (!postId || likePostMutation.isPending || unlikePostMutation.isPending) return;
+    if (likedPostsSet.has(postId)) {
       unlikePostMutation.mutate(postId);
     } else {
       likePostMutation.mutate(postId);
@@ -174,7 +182,8 @@ export default function PostDetail() {
   };
 
   const handleLikeComment = (commentId: number) => {
-    if (likedComments.has(commentId)) {
+    if (likeCommentMutation.isPending || unlikeCommentMutation.isPending) return;
+    if (likedCommentsSet.has(commentId)) {
       unlikeCommentMutation.mutate(commentId);
     } else {
       likeCommentMutation.mutate(commentId);
@@ -214,27 +223,6 @@ export default function PostDetail() {
   if (!post) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border shadow-sm">
-          <div className="container flex items-center justify-between h-16">
-            <div className="flex items-center gap-2">
-              <img 
-                src="https://d2xsxph8kpxj0f.cloudfront.net/310519663506480782/XzEWDxgSS5RTJYj5etncA4/chileoma-logo-J5D7zC5YTWiDqDhd7fMXt5.webp" 
-                alt="吃了吗 Logo" 
-                className="h-10 w-10"
-              />
-              <span className="text-xl font-bold text-primary">吃了吗</span>
-            </div>
-            
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => navigate("/feed")}
-            >
-              返回
-            </Button>
-          </div>
-        </header>
-
         <main className="container py-8">
           <div className="max-w-2xl mx-auto">
             <Card className="p-12 text-center">
@@ -254,31 +242,17 @@ export default function PostDetail() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-16">
-          <div className="flex items-center gap-2">
-            <img 
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663506480782/XzEWDxgSS5RTJYj5etncA4/chileoma-logo-J5D7zC5YTWiDqDhd7fMXt5.webp" 
-              alt="吃了吗 Logo" 
-              className="h-10 w-10"
-            />
-            <span className="text-xl font-bold text-primary">吃了吗</span>
-          </div>
-          
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => navigate("/feed")}
-          >
-            返回
-          </Button>
-        </div>
-      </header>
-
       {/* Main Content */}
-      <main className="container py-8">
+      <main className="container py-6">
         <div className="max-w-2xl mx-auto space-y-6">
+          {/* Back Button */}
+          <button
+            onClick={() => navigate("/feed")}
+            className="flex items-center gap-2 text-foreground/60 hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-medium">返回社区</span>
+          </button>
           {/* Post Card */}
           <Card className="overflow-hidden">
             {/* Post Header */}
@@ -326,17 +300,64 @@ export default function PostDetail() {
             </div>
 
             {/* Post Images */}
-            {post.images && (
-              <div className="bg-muted/30 p-4">
-                <div className="grid grid-cols-2 gap-2">
-                  {(typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images).map((img: string, idx: number) => (
-                    <img 
-                      key={idx}
-                      src={img} 
-                      alt={`Post image ${idx + 1}`}
-                      className="w-full h-48 object-cover rounded-lg"
-                    />
-                  ))}
+            {post.images && (() => {
+              const imageList: string[] = typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images;
+              if (!imageList || imageList.length === 0) return null;
+              return (
+                <div className="bg-muted/30 p-4">
+                  <div className={`grid gap-2 ${imageList.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    {imageList.map((img: string, idx: number) => (
+                      <div 
+                        key={idx} 
+                        className="relative group cursor-pointer overflow-hidden rounded-lg"
+                        onClick={() => setEnlargedImage(img)}
+                      >
+                        <img 
+                          src={img} 
+                          alt={`帖子图片 ${idx + 1}`}
+                          className={`w-full object-cover rounded-lg transition-transform duration-200 group-hover:scale-105 ${imageList.length === 1 ? 'max-h-96' : 'h-48'}`}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-all flex items-center justify-center">
+                          <div className="bg-black/50 rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <ZoomIn className="w-5 h-5 text-white" />
+                          </div>
+                        </div>
+                        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          点击放大
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Image Lightbox - Full Screen */}
+            {enlargedImage && (
+              <div 
+                className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center"
+                onClick={() => setEnlargedImage(null)}
+              >
+                {/* Close button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEnlargedImage(null); }}
+                  className="absolute top-4 right-4 z-[101] bg-white/20 hover:bg-white/40 text-white rounded-full p-3 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+                {/* Hint text */}
+                <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/60 text-sm z-[101]">点击任意位置关闭</p>
+                {/* Image container */}
+                <div 
+                  className="w-full h-full flex items-center justify-center p-4 sm:p-8"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <img 
+                    src={enlargedImage} 
+                    alt="放大图片" 
+                    className="max-w-full max-h-full object-contain select-none"
+                    onClick={() => setEnlargedImage(null)}
+                  />
                 </div>
               </div>
             )}
@@ -348,28 +369,33 @@ export default function PostDetail() {
                   onClick={handleLikePost}
                   disabled={likePostMutation.isPending || unlikePostMutation.isPending}
                   className={`flex items-center gap-2 transition-colors group ${
-                    likedPostId === postId ? "text-secondary" : "hover:text-primary"
+                    likedPostsSet.has(postId!) ? "text-secondary" : "hover:text-primary"
                   }`}
+                  title="点赞"
                 >
                   <Heart 
                     className="w-5 h-5 group-hover:fill-current" 
-                    fill={likedPostId === postId ? "currentColor" : "none"}
+                    fill={likedPostsSet.has(postId!) ? "currentColor" : "none"}
                   />
                   <span className="text-sm">{post.likes || 0}</span>
                 </button>
-                <button className="flex items-center gap-2 hover:text-primary transition-colors">
+                <button 
+                  onClick={() => {
+                    const element = document.getElementById("comments-section");
+                    element?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="flex items-center gap-2 hover:text-primary transition-colors"
+                  title="查看评论"
+                >
                   <MessageCircle className="w-5 h-5" />
                   <span className="text-sm">{post.comments || 0}</span>
-                </button>
-                <button className="flex items-center gap-2 hover:text-primary transition-colors">
-                  <Share2 className="w-5 h-5" />
                 </button>
               </div>
             </div>
           </Card>
 
           {/* Comment Section */}
-          <Card className="p-6">
+          <Card className="p-6" id="comments-section">
             <h2 className="text-lg font-bold text-foreground mb-4">评论</h2>
 
             {/* Comment Input */}
@@ -434,12 +460,12 @@ export default function PostDetail() {
                           onClick={() => handleLikeComment(comment.id)}
                           disabled={likeCommentMutation.isPending || unlikeCommentMutation.isPending}
                           className={`flex items-center gap-1 transition-colors ${
-                            likedComments.has(comment.id) ? "text-secondary" : "hover:text-primary"
+                            likedCommentsSet.has(comment.id) ? "text-secondary" : "hover:text-primary"
                           }`}
                         >
                           <Heart 
                             className="w-4 h-4" 
-                            fill={likedComments.has(comment.id) ? "currentColor" : "none"}
+                            fill={likedCommentsSet.has(comment.id) ? "currentColor" : "none"}
                           />
                           <span>{comment.likes || 0}</span>
                         </button>

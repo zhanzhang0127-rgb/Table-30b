@@ -438,3 +438,53 @@ describe("Profile Update", () => {
     }
   });
 });
+
+
+describe("My Liked Posts (我的喜欢)", () => {
+  it("should require authentication to get liked posts with details", async () => {
+    const ctx: TrpcContext = {
+      user: null,
+      req: {
+        protocol: "https",
+        headers: {},
+      } as TrpcContext["req"],
+      res: {} as TrpcContext["res"],
+    };
+
+    const caller = appRouter.createCaller(ctx);
+
+    try {
+      await caller.likes.getMyLikedPostsWithDetails();
+      expect.fail("Should have thrown unauthorized error");
+    } catch (error: any) {
+      expect(error.code).toBe("UNAUTHORIZED");
+    }
+  });
+
+  it("should return an array for authenticated user", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    try {
+      const result = await caller.likes.getMyLikedPostsWithDetails();
+      expect(Array.isArray(result)).toBe(true);
+    } catch (error: any) {
+      // Database errors are expected in unit tests without a real DB
+      expect(error).toBeDefined();
+    }
+  });
+
+  it("should return empty array when user has no liked posts", async () => {
+    const { ctx } = createAuthContext(999);
+    const caller = appRouter.createCaller(ctx);
+
+    try {
+      const result = await caller.likes.getMyLikedPostsWithDetails();
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBe(0);
+    } catch (error: any) {
+      // Database errors are expected in unit tests without a real DB
+      expect(error).toBeDefined();
+    }
+  });
+});

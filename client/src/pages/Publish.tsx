@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ImagePlus, Loader2, X } from "lucide-react";
+import { ImagePlus, Loader2, X, ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -86,60 +86,49 @@ export default function Publish() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-16">
-          <div className="flex items-center gap-2">
-            <img 
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663506480782/XzEWDxgSS5RTJYj5etncA4/chileoma-logo-J5D7zC5YTWiDqDhd7fMXt5.webp" 
-              alt="吃了吗 Logo" 
-              className="h-10 w-10"
-            />
-            <span className="text-xl font-bold text-primary">吃了吗</span>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => navigate("/feed")}
-            >
-              返回
-            </Button>
-          </div>
-        </div>
-      </header>
-
       {/* Main Content */}
-      <main className="container py-8">
+      <main className="container py-6">
         <div className="max-w-2xl mx-auto">
+          {/* Back Button */}
+          <button
+            onClick={() => navigate("/feed")}
+            className="flex items-center gap-2 text-foreground/60 hover:text-foreground mb-4 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-medium">返回社区</span>
+          </button>
+
           <Card className="p-8">
             <h1 className="text-3xl font-bold text-foreground mb-8">分享你的美食故事</h1>
 
             {/* Title Input */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                标题 *
+                标题 * <span className="text-xs text-foreground/50 font-normal">（如：某餐厅的招牌菜真绝了）</span>
               </label>
               <Input
-                placeholder="给你的分享起个吸引人的标题..."
+                placeholder="例如：XXX餐厅的招牌菜、这家店的环境超舒服..."
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                maxLength={100}
                 className="bg-muted/50 border-border"
               />
+              <p className="text-xs text-foreground/50 mt-1">{title.length}/100 字符</p>
             </div>
 
             {/* Content Textarea */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                内容 *
+                内容 * <span className="text-xs text-foreground/50 font-normal">（分享你的美食体验和感受）</span>
               </label>
               <Textarea
-                placeholder="分享你的美食体验、餐厅推荐、烹饪心得..."
+                placeholder="例如：这家店的菜品很新鲜，特别推荐他们的...\n环境很舒适，适合和朋友聚餐...\n价格也很合理，性价比很高..."
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
+                maxLength={1000}
                 className="bg-muted/50 border-border min-h-40 resize-none"
               />
+              <p className="text-xs text-foreground/50 mt-1">{content.length}/1000 字符</p>
             </div>
 
             {/* Rating */}

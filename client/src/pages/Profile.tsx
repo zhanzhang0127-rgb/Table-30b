@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, Phone, User, LogOut, Heart, FileText } from "lucide-react";
+import { Mail, Phone, User, LogOut, Heart, FileText, MessageCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -40,8 +40,8 @@ export default function Profile() {
     { enabled: isAuthenticated && user?.id !== undefined }
   );
 
-  // Fetch user's favorites
-  const { data: favorites, isLoading: isLoadingFavorites } = trpc.favorites.getMyFavorites.useQuery(
+  // Fetch user's liked posts with details
+  const { data: likedPosts, isLoading: isLoadingLiked } = trpc.likes.getMyLikedPostsWithDetails.useQuery(
     undefined,
     { enabled: isAuthenticated }
   );
@@ -118,30 +118,6 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-16">
-          <div className="flex items-center gap-2">
-            <img 
-              src="https://d2xsxph8kpxj0f.cloudfront.net/310519663506480782/XzEWDxgSS5RTJYj5etncA4/chileoma-logo-J5D7zC5YTWiDqDhd7fMXt5.webp" 
-              alt="吃了吗 Logo" 
-              className="h-10 w-10"
-            />
-            <span className="text-xl font-bold text-primary">吃了吗</span>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => navigate("/feed")}
-            >
-              返回首页
-            </Button>
-          </div>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="container py-8">
         <div className="max-w-4xl mx-auto">
@@ -213,8 +189,8 @@ export default function Profile() {
                 <p className="text-sm text-foreground/60">发布</p>
               </div>
               <div className="text-center p-4 bg-muted/30 rounded-lg">
-                <p className="text-2xl font-bold text-primary">{favorites?.length || 0}</p>
-                <p className="text-sm text-foreground/60">收藏</p>
+                <p className="text-2xl font-bold text-primary">{likedPosts?.length || 0}</p>
+                <p className="text-sm text-foreground/60">喜欢</p>
               </div>
               <div className="text-center p-4 bg-muted/30 rounded-lg">
                 <p className="text-2xl font-bold text-primary">0</p>
@@ -231,9 +207,9 @@ export default function Profile() {
                 <FileText className="w-4 h-4" />
                 我的发布
               </TabsTrigger>
-              <TabsTrigger value="favorites" className="gap-2">
+              <TabsTrigger value="likes" className="gap-2">
                 <Heart className="w-4 h-4" />
-                我的收藏
+                我的喜欢
               </TabsTrigger>
             </TabsList>
 
@@ -332,18 +308,28 @@ export default function Profile() {
                         </p>
                       </div>
                       {post.rating && (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 ml-4">
                           <span className="text-lg font-bold text-secondary">★</span>
                           <span className="font-semibold text-foreground">{post.rating}</span>
                         </div>
                       )}
                     </div>
-                    <p className="text-foreground/70 line-clamp-2">{post.content}</p>
+                    {post.content && (
+                      <p className="text-foreground/70 line-clamp-2">{post.content}</p>
+                    )}
+                    <div className="flex items-center gap-4 mt-3 text-sm text-foreground/50">
+                      <span className="flex items-center gap-1">
+                        <Heart className="w-3.5 h-3.5" /> {post.likes || 0}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MessageCircle className="w-3.5 h-3.5" /> {post.comments || 0}
+                      </span>
+                    </div>
                   </Card>
                 ))
               ) : (
                 <Card className="p-12 text-center">
-                  <p className="text-foreground/70 mb-4">还没有发布过内容</p>
+                  <p className="text-foreground/70 mb-4">还没有发布过帖子</p>
                   <Button 
                     onClick={() => navigate("/publish")}
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
@@ -354,35 +340,78 @@ export default function Profile() {
               )}
             </TabsContent>
 
-            {/* Favorites Tab */}
-            <TabsContent value="favorites" className="space-y-4">
-              {isLoadingFavorites ? (
+            {/* Likes Tab - 我的喜欢 */}
+            <TabsContent value="likes" className="space-y-4">
+              {isLoadingLiked ? (
                 <div className="flex justify-center py-12">
                   <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
                 </div>
-              ) : favorites && favorites.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {favorites.map((favorite: any) => (
-                    <Card 
-                      key={favorite.id} 
-                      className="p-6 cursor-pointer hover:shadow-md transition-shadow"
-                      onClick={() => navigate(`/restaurant/${favorite.restaurantId}`)}
-                    >
-                      <h3 className="text-lg font-bold text-foreground mb-2">餐厅 #{favorite.restaurantId}</h3>
-                      <p className="text-sm text-foreground/60">
-                        已收藏
-                      </p>
-                    </Card>
-                  ))}
-                </div>
+              ) : likedPosts && likedPosts.length > 0 ? (
+                likedPosts.map((post: any) => (
+                  <Card 
+                    key={post.id} 
+                    className="p-6 cursor-pointer hover:shadow-md transition-shadow"
+                    onClick={() => navigate(`/post/${post.id}`)}
+                  >
+                    <div className="flex items-start gap-4">
+                      {/* Post thumbnail */}
+                      {post.images && (() => {
+                        try {
+                          const imageList: string[] = typeof post.images === 'string' ? JSON.parse(post.images || "[]") : (Array.isArray(post.images) ? post.images : []);
+                          if (imageList && imageList.length > 0) {
+                            return (
+                              <img 
+                                src={imageList[0]} 
+                                alt={post.title}
+                                className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                              />
+                            );
+                          }
+                        } catch {
+                          // Ignore malformed image data
+                        }
+                        return null;
+                      })()}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between mb-1">
+                          <h3 className="text-lg font-bold text-foreground truncate">{post.title}</h3>
+                          {post.rating && (
+                            <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                              <span className="text-lg font-bold text-secondary">★</span>
+                              <span className="font-semibold text-foreground">{post.rating}</span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-sm text-foreground/60 mb-1">
+                          {post.userName || "用户"} · {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { 
+                            addSuffix: true,
+                            locale: zhCN 
+                          }) : ""}
+                        </p>
+                        {post.content && (
+                          <p className="text-foreground/70 text-sm line-clamp-2">{post.content}</p>
+                        )}
+                        <div className="flex items-center gap-4 mt-2 text-sm text-foreground/50">
+                          <span className="flex items-center gap-1">
+                            <Heart className="w-3.5 h-3.5 text-red-400" fill="currentColor" /> {post.likes || 0}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <MessageCircle className="w-3.5 h-3.5" /> {post.comments || 0}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ))
               ) : (
                 <Card className="p-12 text-center">
-                  <p className="text-foreground/70 mb-4">还没有收藏过餐厅</p>
+                  <Heart className="w-12 h-12 text-foreground/20 mx-auto mb-4" />
+                  <p className="text-foreground/70 mb-4">还没有喜欢过帖子</p>
                   <Button 
-                    onClick={() => navigate("/restaurants")}
+                    onClick={() => navigate("/feed")}
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
                   >
-                    去浏览餐厅
+                    去社区看看
                   </Button>
                 </Card>
               )}

@@ -275,7 +275,6 @@ export default function Admin() {
             { id: "overview", label: "数据概览", icon: LayoutDashboard, show: true },
             { id: "restaurants", label: "餐厅管理", icon: UtensilsCrossed, show: true },
             { id: "users", label: "用户列表", icon: Users, show: isSuperAdmin },
-            { id: "admins", label: "管理员管理", icon: Users, show: isSuperAdmin },
           ].filter(item => item.show).map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -432,7 +431,8 @@ export default function Admin() {
         {/* Users Tab - super_admin only */}
         {activeTab === "users" && isSuperAdmin && (
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-6">用户列表</h1>
+            <h1 className="text-2xl font-bold text-foreground mb-2">用户列表</h1>
+            <p className="text-sm text-foreground/60 mb-6">点击右侧按钮可直接设置或撤销管理员权限。</p>
             {isLoadingUsers ? (
               <div className="flex justify-center py-16">
                 <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary border-t-transparent" />
@@ -453,9 +453,33 @@ export default function Admin() {
                         </div>
                         <p className="text-sm text-foreground/60">{u.email}</p>
                       </div>
-                      <p className="text-xs text-foreground/40 flex-shrink-0">
-                        {new Date(u.createdAt).toLocaleDateString("zh-CN")}
-                      </p>
+                      <div className="flex-shrink-0">
+                        {u.role === "user" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-primary border-primary/30 hover:bg-primary/10"
+                            onClick={() => setRoleMutation.mutate({ userId: u.id, role: "admin" })}
+                            disabled={setRoleMutation.isPending}
+                          >
+                            设为管理员
+                          </Button>
+                        )}
+                        {u.role === "admin" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-500 border-red-200 hover:bg-red-50"
+                            onClick={() => setRoleMutation.mutate({ userId: u.id, role: "user" })}
+                            disabled={setRoleMutation.isPending}
+                          >
+                            撤销权限
+                          </Button>
+                        )}
+                        {u.role === "super_admin" && (
+                          <span className="text-xs text-foreground/40">总管理员</span>
+                        )}
+                      </div>
                     </div>
                   </Card>
                 ))}

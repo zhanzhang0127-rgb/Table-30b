@@ -22,6 +22,20 @@
       "when": 1775791275879,
       "tag": "0002_sticky_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1776774022220,
+      "tag": "0003_natural_living_lightning",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1776838607983,
+      "tag": "0004_lively_lucky_pierre",
+      "breakpoints": true
     }
   ]
 }

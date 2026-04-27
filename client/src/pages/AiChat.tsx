@@ -1,148 +1,156 @@
+import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, Bot, User, Star, MapPin, Phone, Heart } from "lucide-react";
+import { Send, Loader2, Bot, User, Sparkles, MapPin, MapPinOff } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState, useRef } from "react";
-import { mockRestaurants } from "@/lib/mockData";
 import { useAuth } from "@/_core/hooks/useAuth";
-
-interface RestaurantRecommendation {
-  id: number;
-  name: string;
-  cuisine: string;
-  address: string;
-  rating: number;
-  totalRatings: number;
-  priceLevel: string;
-  image: string;
-  description: string;
-}
+import { toast } from "sonner";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
-  content?: string;
-  recommendations?: RestaurantRecommendation[];
+  content: string;
   timestamp: Date;
 }
+
+interface UserLocation {
+  latitude: number;
+  longitude: number;
+  address?: string;
+}
+
+const QUICK_PROMPTS = [
+  "根据我的口味推荐几家餐厅",
+  "附近有什么好吃的？",
+  "平台上最近有什么热门美食？",
+  "帮我推荐适合约会的餐厅",
+];
 
 export default function AiChat() {
   const { isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: "1",
+      id: "welcome",
       role: "assistant",
-      content: "你好！👋 我是吃了吗AI助手。我可以根据你的口味偏好、预算、用餐场景等信息，为你推荐最适合的餐厅。\n\n请告诉我：\n• 你想吃什么菜系？\n• 你的预算范围是多少？\n• 用餐场景是什么？（约会、家庭聚餐、商务宴请等）\n• 你所在的城市或地区？",
+      content: `你好！👋 我是吃了吗 AI 助手，由 GLM-4 驱动。\n\n我已经了解了你在平台上的收藏和点赞记录，可以为你提供个性化的美食推荐。\n\n点击下方「📍 获取我的位置」按钮，我还能为你推荐附近的餐厅！`,
       timestamp: new Date(),
     },
   ]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >([]);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [favorites, setFavorites] = useState<number[]>([]);
 
-  // Redirect to home if not authenticated
+  const reverseGeocode = trpc.restaurants.reverseGeocode.useMutation();
+
+  const chatMutation = trpc.aiRecommendations.chat.useMutation({
+    onSuccess: (data) => {
+      const assistantMessage: Message = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: data.reply,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+      setConversationHistory((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply },
+      ]);
+    },
+    onError: (error) => {
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: `抱歉，AI 助手暂时无法响应，请稍后再试。（${error.message}）`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    },
+  });
+
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       navigate("/");
     }
   }, [isAuthenticated, loading, navigate]);
 
-  // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSendMessage = async () => {
-    if (!input.trim()) return;
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("你的浏览器不支持定位功能");
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        let address: string | undefined;
+        try {
+          const result = await reverseGeocode.mutateAsync({ latitude: lat, longitude: lng });
+          address = result.address;
+        } catch {
+          // 高德解析失败也没关系，坐标还是有效的
+        }
+        setUserLocation({ latitude: lat, longitude: lng, address });
+        setLocationLoading(false);
+        // 自动发一条提示消息
+        const locMsg = address ? `已获取你的位置：${address}` : `已获取你的位置（经纬度 ${lat.toFixed(4)}, ${lng.toFixed(4)}）`;
+        const sysMsg: Message = {
+          id: `loc-${Date.now()}`,
+          role: "assistant",
+          content: `📍 ${locMsg}\n\n现在你可以问我「附近有什么好吃的」，我会根据你的实时位置推荐附近餐厅！`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, sysMsg]);
+        toast.success(`位置获取成功：${address || "已获取坐标"}`);  
+      },
+      (err) => {
+        setLocationLoading(false);
+          toast.error(err.code === 1 ? "请允许浏览器访问你的位置" : "无法获取位置，请稍后重试");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
-    // Add user message
+  const handleClearLocation = () => {
+    setUserLocation(null);
+    toast("已关闭位置共享");
+  };
+
+  const sendMessage = (text: string) => {
+    if (!text.trim() || chatMutation.isPending) return;
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input,
+      content: text,
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    // 先构建新历史，再发送（避免状态时序问题）
+    const newHistory = [...conversationHistory, { role: "user" as const, content: text }];
+    setMessages((prev) => [...prev, userMessage]);
+    setConversationHistory(newHistory);
     setInput("");
-    setIsLoading(true);
 
-    // Simulate AI response with restaurant recommendations
-    setTimeout(() => {
-      const responseType = Math.floor(Math.random() * 2); // Changed from 3 to 2 to ensure recommendations appear more often
-      let assistantMessage: Message;
-
-      if (true) { // Always show recommendations
-        // Response with restaurant recommendations
-        const recommendations: RestaurantRecommendation[] = [
-          mockRestaurants[0],
-          mockRestaurants[1],
-          mockRestaurants[2],
-        ].map(r => ({
-          id: r.id,
-          name: r.name,
-          cuisine: r.cuisine,
-          address: r.address,
-          rating: parseFloat(r.averageRating),
-          totalRatings: r.totalRatings,
-          priceLevel: r.priceLevel,
-          image: r.image,
-          description: r.description,
-        }));
-
-        assistantMessage = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: "根据你的描述，我为你推荐以下几家餐厅：",
-          recommendations,
-          timestamp: new Date(),
-        };
-      } else if (responseType === 1) {
-        // Response with single recommendation
-        const recommendation: RestaurantRecommendation = {
-          id: mockRestaurants[0].id,
-          name: mockRestaurants[0].name,
-          cuisine: mockRestaurants[0].cuisine,
-          address: mockRestaurants[0].address,
-          rating: parseFloat(mockRestaurants[0].averageRating),
-          totalRatings: mockRestaurants[0].totalRatings,
-          priceLevel: mockRestaurants[0].priceLevel,
-          image: mockRestaurants[0].image,
-          description: mockRestaurants[0].description,
-        };
-
-        assistantMessage = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: "根据你的需求，我最推荐这家餐厅。它完全符合你的需求，环境优雅，菜品精致，性价比也很好。",
-          recommendations: [recommendation],
-          timestamp: new Date(),
-        };
-      } else {
-        // Text-only response
-        assistantMessage = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: "太好了！我已经为你整理了推荐列表。你可以点击\"收藏\"保存喜欢的餐厅，或者告诉我更多关于你的偏好，我会继续为你推荐。",
-          timestamp: new Date(),
-        };
-      }
-
-      setMessages(prev => [...prev, assistantMessage]);
-      setIsLoading(false);
-    }, 1500);
+    chatMutation.mutate({
+      message: text,
+      conversationHistory: newHistory.slice(0, -1), // 不包含当前消息，已单独传入 message
+      userLocation: userLocation ?? undefined,
+    });
   };
 
-  const toggleFavorite = (restaurantId: number) => {
-    setFavorites(prev =>
-      prev.includes(restaurantId)
-        ? prev.filter(id => id !== restaurantId)
-        : [...prev, restaurantId]
-    );
-  };
+  const handleSend = () => sendMessage(input);
 
   if (loading || !isAuthenticated) {
     return (
@@ -154,142 +162,108 @@ export default function AiChat() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Chat Container */}
-      <main className="flex-1 container py-8 flex flex-col">
-        <div className="max-w-4xl mx-auto w-full flex flex-col h-full">
+      <main className="flex-1 container py-6 flex flex-col">
+        <div className="max-w-3xl mx-auto w-full flex flex-col" style={{ height: "calc(100vh - 120px)" }}>
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Bot className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="font-bold text-foreground flex items-center gap-2">
+                  AI 美食助手
+                  <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    GLM-4 驱动
+                  </span>
+                </h1>
+                <p className="text-xs text-foreground/60">基于你的收藏和喜好，提供个性化美食推荐</p>
+              </div>
+            </div>
+
+            {/* 位置状态按钮 */}
+            {userLocation ? (
+              <button
+                onClick={handleClearLocation}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/20 transition-colors"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">
+                  {userLocation.address ? userLocation.address.slice(0, 10) + "…" : "位置已共享"}
+                </span>
+                <span className="sm:hidden">已定位</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleGetLocation}
+                disabled={locationLoading}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-border text-foreground/60 hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                {locationLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <MapPinOff className="w-3.5 h-3.5" />
+                )}
+                <span>{locationLoading ? "定位中…" : "📍 获取我的位置"}</span>
+              </button>
+            )}
+          </div>
+
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto mb-6 space-y-6 pr-4">
+          <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
             {messages.map((message) => (
-              <div key={message.id}>
-                {/* Message bubble */}
-                <div
-                  className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              <div
+                key={message.id}
+                className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                {message.role === "assistant" && (
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center mt-1">
+                    <Bot className="w-5 h-5 text-primary" />
+                  </div>
+                )}
+
+                <Card
+                  className={`max-w-[75%] p-4 ${
+                    message.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/50 text-foreground"
+                  }`}
                 >
-                  {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                      <Bot className="w-5 h-5 text-primary" />
-                    </div>
-                  )}
-
-                  {message.content && (
-                    <Card className={`max-w-lg p-4 ${
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                  <p
+                    className={`text-xs mt-2 ${
                       message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted/50 text-foreground"
-                    }`}>
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
-                      <p className={`text-xs mt-2 ${
-                        message.role === "user"
-                          ? "text-primary-foreground/70"
-                          : "text-foreground/60"
-                      }`}>
-                        {message.timestamp.toLocaleTimeString()}
-                      </p>
-                    </Card>
-                  )}
+                        ? "text-primary-foreground/70"
+                        : "text-foreground/50"
+                    }`}
+                  >
+                    {message.timestamp.toLocaleTimeString("zh-CN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </Card>
 
-                  {message.role === "user" && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary/20 flex items-center justify-center">
-                      <User className="w-5 h-5 text-secondary" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Restaurant recommendations */}
-                {message.recommendations && message.recommendations.length > 0 && (
-                  <div className="mt-4 ml-11 space-y-3">
-                    {message.recommendations.map((restaurant) => (
-                      <Card key={restaurant.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                        <div className="flex flex-col md:flex-row">
-                          {/* Image */}
-                          <div className="md:w-48 h-40 md:h-auto flex-shrink-0">
-                            <img
-                              src={restaurant.image}
-                              alt={restaurant.name}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-
-                          {/* Content */}
-                          <div className="flex-1 p-4 flex flex-col justify-between">
-                            <div>
-                              <div className="flex items-start justify-between mb-2">
-                                <div>
-                                  <h3 className="text-lg font-bold text-foreground">{restaurant.name}</h3>
-                                  <p className="text-sm text-foreground/60 mt-1">{restaurant.cuisine}</p>
-                                </div>
-                                <span className="text-sm font-semibold px-2 py-1 bg-yellow-100 text-yellow-800 rounded">
-                                  {restaurant.priceLevel}
-                                </span>
-                              </div>
-
-                              <p className="text-sm text-foreground/70 mb-3 line-clamp-2">
-                                {restaurant.description}
-                              </p>
-
-                              {/* Rating */}
-                              <div className="flex items-center gap-3 mb-3">
-                                <div className="flex items-center gap-1">
-                                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                                  <span className="text-sm font-semibold text-foreground">
-                                    {restaurant.rating}
-                                  </span>
-                                  <span className="text-xs text-foreground/60">
-                                    ({restaurant.totalRatings}条评价)
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Address */}
-                              <div className="flex items-start gap-2 text-sm text-foreground/70 mb-3">
-                                <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                                <span>{restaurant.address}</span>
-                              </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex gap-2 pt-3 border-t border-border">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1"
-                                onClick={() => toggleFavorite(restaurant.id)}
-                              >
-                                <Heart
-                                  className={`w-4 h-4 mr-1 ${
-                                    favorites.includes(restaurant.id)
-                                      ? "fill-red-500 text-red-500"
-                                      : ""
-                                  }`}
-                                />
-                                {favorites.includes(restaurant.id) ? "已收藏" : "收藏"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
-                              >
-                                查看详情
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
+                {message.role === "user" && (
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary/20 flex items-center justify-center mt-1">
+                    <User className="w-5 h-5 text-secondary" />
                   </div>
                 )}
               </div>
             ))}
 
-            {isLoading && (
+            {chatMutation.isPending && (
               <div className="flex gap-3 justify-start">
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
                   <Bot className="w-5 h-5 text-primary" />
                 </div>
                 <Card className="bg-muted/50 p-4">
-                  <div className="flex gap-2">
-                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                  <div className="flex gap-1.5 items-center">
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" />
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
+                    <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
+                    <span className="text-xs text-foreground/50 ml-1">AI 思考中…</span>
                   </div>
                 </Card>
               </div>
@@ -298,32 +272,55 @@ export default function AiChat() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Quick prompts - show only at start */}
+          {messages.length <= 1 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {QUICK_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => sendMessage(prompt)}
+                  disabled={chatMutation.isPending}
+                  className="text-xs px-3 py-1.5 rounded-full border border-border bg-muted/30 text-foreground/70 hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Input Area */}
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <Input
-              placeholder="告诉我你想吃什么..."
+              placeholder={userLocation ? "问我附近有什么好吃的…" : "问我任何关于美食的问题…"}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === "Enter" && !isLoading) {
-                  handleSendMessage();
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !chatMutation.isPending) {
+                  e.preventDefault();
+                  handleSend();
                 }
               }}
-              disabled={isLoading}
+              disabled={chatMutation.isPending}
               className="flex-1 bg-muted/50 border-border"
+              maxLength={500}
             />
             <Button
-              onClick={handleSendMessage}
-              disabled={isLoading || !input.trim()}
+              onClick={handleSend}
+              disabled={chatMutation.isPending || !input.trim()}
               className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
             >
-              {isLoading ? (
+              {chatMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Send className="w-4 h-4" />
               )}
             </Button>
           </div>
+          <p className="text-xs text-foreground/40 text-center mt-2">
+            {userLocation
+              ? `📍 正在共享位置 · AI 回复仅供参考`
+              : "AI 回复仅供参考，实际用餐体验以餐厅现场为准"}
+          </p>
         </div>
       </main>
     </div>

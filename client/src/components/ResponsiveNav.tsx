@@ -1,14 +1,15 @@
 import { useLocation } from "wouter";
-import { MessageCircle, Trophy, Bot, User, Plus, UtensilsCrossed } from "lucide-react";
+import { MessageCircle, Trophy, Bot, User, Plus, UtensilsCrossed, Settings } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 
 export function ResponsiveNav() {
   const [location, navigate] = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
-  // Don't show nav on home/landing page
-  if (location === "/") return null;
+  // Don't show nav on home/landing page or admin page
+  if (location === "/" || location.startsWith("/admin")) return null;
 
   const navItems = [
     { href: "/feed", label: "社区", icon: MessageCircle },
@@ -69,6 +70,16 @@ export function ResponsiveNav() {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button
+                onClick={() => navigate("/admin")}
+                size="sm"
+                variant="outline"
+              >
+                <Settings className="w-4 h-4 mr-1" />
+                管理后台
+              </Button>
+            )}
             {isAuthenticated && (
               <Button
                 onClick={() => navigate("/publish")}

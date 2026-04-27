@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { MapPin, Star, Phone, Globe, Heart } from "lucide-react";
+import { MapPin, Star, Phone, Globe, Heart, Plus } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -78,7 +78,19 @@ export default function Restaurants() {
         <div className="max-w-5xl mx-auto">
           {/* Search Section */}
           <Card className="p-6 mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-6">发现餐厅</h1>
+            <div className="flex items-center justify-between mb-6">
+              <h1 className="text-3xl font-bold text-foreground">发现餐厅</h1>
+              {isAuthenticated && (
+                <Button
+                  onClick={() => navigate("/submit-restaurant")}
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  提交餐厅
+                </Button>
+              )}
+            </div>
             
             <div className="flex gap-3">
               <Input

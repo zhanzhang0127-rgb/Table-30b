@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, count, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, posts, restaurants, comments, userProfiles, favorites, aiRecommendations, rankings, postLikes, commentLikes } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -56,8 +56,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      // Owner gets super_admin on first insert, but never overwrite existing role on update
+      values.role = 'super_admin';
+      // Do NOT add to updateSet - this ensures role is only set on INSERT, not on duplicate key UPDATE
     }
 
     if (!values.lastSignedIn) {
@@ -446,4 +447,133 @@ export async function updateUserName(userId: number, name: string) {
   if (!db) throw new Error("Database not available");
   if (!name || name.trim().length === 0) throw new Error("Name cannot be empty");
   return db.update(users).set({ name: name.trim() }).where(eq(users.id, userId));
+}
+
+// ==================== Admin queries ====================
+
+export async function getAllRestaurantsAdmin(limit: number = 100, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(restaurants).orderBy(desc(restaurants.createdAt)).limit(limit).offset(offset);
+}
+
+export async function createRestaurantAdmin(data: typeof restaurants.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.insert(restaurants).values(data);
+}
+
+export async function updateRestaurant(id: number, data: Partial<typeof restaurants.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(restaurants).set({ ...data, updatedAt: new Date() }).where(eq(restaurants.id, id));
+}
+
+export async function deleteRestaurant(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(restaurants).where(eq(restaurants.id, id));
+}
+
+export async function updateRestaurantStatus(id: number, status: "published" | "pending" | "rejected") {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(restaurants).set({ status, updatedAt: new Date() }).where(eq(restaurants.id, id));
+}
+
+export async function getAdminStats() {
+  const db = await getDb();
+  if (!db) return { totalUsers: 0, totalPosts: 0, totalRestaurants: 0, pendingRestaurants: 0 };
+  const [usersCount] = await db.select({ count: count() }).from(users);
+  const [postsCount] = await db.select({ count: count() }).from(posts);
+  const [restaurantsCount] = await db.select({ count: count() }).from(restaurants);
+  const [pendingCount] = await db.select({ count: count() }).from(restaurants).where(eq(restaurants.status, 'pending'));
+  return {
+    totalUsers: usersCount?.count ?? 0,
+    totalPosts: postsCount?.count ?? 0,
+    totalRestaurants: restaurantsCount?.count ?? 0,
+    pendingRestaurants: pendingCount?.count ?? 0,
+  };
+}
+
+export async function getAllUsers(limit: number = 100, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: users.id, name: users.name, email: users.email, role: users.role, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+}
+
+export async function getPublishedRestaurants(limit: number = 20, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(restaurants)
+    .where(eq(restaurants.status, 'published'))
+    .orderBy(desc(restaurants.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function getAdminUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+    role: users.role,
+    createdAt: users.createdAt,
+    lastSignedIn: users.lastSignedIn,
+  }).from(users)
+    .where(sql`${users.role} IN ('admin', 'super_admin')`)
+    .orderBy(desc(users.createdAt));
+}
+
+export async function setUserRole(userId: number, role: 'user' | 'admin' | 'super_admin') {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+  const [updated] = await db.select().from(users).where(eq(users.id, userId));
+  return updated;
+}
+
+/**
+ * 按经纬度查询附近已发布餐厅（Haversine 公式，单位：公里）
+ */
+export async function getNearbyRestaurants(lat: number, lng: number, radiusKm: number = 5, limit: number = 10) {
+  const db = await getDb();
+  if (!db) return [];
+  // Haversine 公式（MySQL 内联计算距离）
+  const distanceExpr = sql<number>`
+    6371 * 2 * ASIN(SQRT(
+      POWER(SIN((RADIANS(CAST(${restaurants.latitude} AS DECIMAL(10,7))) - RADIANS(${lat})) / 2), 2) +
+      COS(RADIANS(${lat})) * COS(RADIANS(CAST(${restaurants.latitude} AS DECIMAL(10,7)))) *
+      POWER(SIN((RADIANS(CAST(${restaurants.longitude} AS DECIMAL(10,7))) - RADIANS(${lng})) / 2), 2)
+    ))
+  `;
+  const result = await db.select({
+    id: restaurants.id,
+    name: restaurants.name,
+    cuisine: restaurants.cuisine,
+    address: restaurants.address,
+    city: restaurants.city,
+    district: restaurants.district,
+    averageRating: restaurants.averageRating,
+    priceLevel: restaurants.priceLevel,
+    latitude: restaurants.latitude,
+    longitude: restaurants.longitude,
+    distance: distanceExpr,
+  })
+    .from(restaurants)
+    .where(
+      sql`${restaurants.status} = 'published'
+        AND ${restaurants.latitude} IS NOT NULL
+        AND ${restaurants.longitude} IS NOT NULL
+        AND (6371 * 2 * ASIN(SQRT(
+          POWER(SIN((RADIANS(CAST(${restaurants.latitude} AS DECIMAL(10,7))) - RADIANS(${lat})) / 2), 2) +
+          COS(RADIANS(${lat})) * COS(RADIANS(CAST(${restaurants.latitude} AS DECIMAL(10,7)))) *
+          POWER(SIN((RADIANS(CAST(${restaurants.longitude} AS DECIMAL(10,7))) - RADIANS(${lng})) / 2), 2)
+        ))) <= ${radiusKm}`
+    )
+    .orderBy(distanceExpr)
+    .limit(limit);
+  return result;
 }

@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Heart, MapPin, MessageCircle, Users, Utensils, Zap, AlertCircle } from "lucide-react";
+import { Heart, MapPin, MessageCircle, Users, Utensils, Zap, AlertCircle, Info } from "lucide-react";
 import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
@@ -16,9 +16,9 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const error = params.get('error');
     if (error === 'invalid_email_domain') {
-      setErrorMessage('注册失败：只允许使用 @student.xjtlu.edu.cn 邮箱地址注册。请使用你的大学邮箱重新注册。');
+      setErrorMessage('注册失败：只允许使用 @student.xjtlu.edu.cn 邮箱地址注册。请使用你的大学邮箱或第三方账号（Google、Microsoft等）重新登录。');
     } else if (error === 'oauth_failed') {
-      setErrorMessage('注册失败：OAuth认证失败，请稍后重试。');
+      setErrorMessage('登录失败：认证出错，请稍后重试。');
     }
   }, []);
 
@@ -102,9 +102,18 @@ export default function Home() {
             <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
               发现美食，分享快乐。与朋友一起探索城市最好的餐厅，分享你的美食故事。
             </p>
-            <p className="text-sm text-foreground/50">
-              💡 仅限西交利物浦大学学生使用（需要 @student.xjtlu.edu.cn 邮箱）
-            </p>
+            
+            {/* Login tip */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 max-w-lg mx-auto">
+              <div className="flex items-start gap-2">
+                <Info className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="text-left text-sm text-amber-800">
+                  <p className="font-medium mb-1">登录提示</p>
+                  <p>请使用 <strong>Google、Microsoft、Facebook 或 Apple</strong> 账号登录。跳转后请直接点击对应的第三方登录按钮，无需输入邮箱。</p>
+                </div>
+              </div>
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
               <Button 
                 size="lg"

@@ -6,6 +6,23 @@ import { z } from "zod";
 import * as db from "./db";
 import { TRPCError } from "@trpc/server";
 import { storagePut } from "./storage";
+import { ENV } from "./_core/env";
+import { invokeGLM4, type GLM4Message } from "./_core/glm4";
+// Using native fetch (Node 18+)
+
+// Admin procedure: allows both admin and super_admin
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin')
+    throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
+  return next({ ctx });
+});
+
+// Super admin procedure: only super_admin
+const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== 'super_admin')
+    throw new TRPCError({ code: 'FORBIDDEN', message: '需要超级管理员权限' });
+  return next({ ctx });
+});
 
 export const appRouter = router({
   system: systemRouter,
@@ -122,6 +139,71 @@ export const appRouter = router({
         offset: z.number().default(0),
       }))
       .query(({ input }) => db.getRestaurantsByDistrict(input.city, input.district, input.limit, input.offset)),
+
+    // 获取已发布餐厅列表（公开）
+    getPublished: publicProcedure
+      .input(z.object({
+        limit: z.number().default(20),
+        offset: z.number().default(0),
+      }))
+      .query(({ input }) => db.getPublishedRestaurants(input.limit, input.offset)),
+
+    // 逆地理编码：坐标 → 中文地址（后端代理，Key 不暴露给前端）
+    reverseGeocode: protectedProcedure
+      .input(z.object({
+        latitude: z.number(),
+        longitude: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        const { latitude, longitude } = input;
+        const key = ENV.amapApiKey;
+        if (!key) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '地图服务未配置' });
+        const url = `https://restapi.amap.com/v3/geocode/regeo?key=${key}&location=${longitude},${latitude}&radius=100&extensions=base&batch=false`;
+        const res = await fetch(url);
+        const data = await res.json() as any;
+        if (data.status !== '1') throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '地址解析失败' });
+        const regeocode = data.regeocode;
+        return {
+          address: regeocode.formatted_address as string,
+          city: (regeocode.addressComponent?.city || regeocode.addressComponent?.province || '') as string,
+          district: (regeocode.addressComponent?.district || '') as string,
+        };
+      }),
+
+    // 用户提交餐厅（默认 pending 待审核）
+    submit: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1, '请输入餐厅名称'),
+        description: z.string().optional(),
+        cuisine: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        district: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        phone: z.string().optional(),
+        image: z.string().optional(),
+        priceLevel: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        let imageUrl = input.image;
+        if (imageUrl && imageUrl.startsWith('data:')) {
+          const parts = imageUrl.split(',');
+          const base64Data = parts[1];
+          if (base64Data) {
+            const buffer = Buffer.from(base64Data, 'base64');
+            const fileKey = `restaurants/user-${ctx.user.id}-${Date.now()}.jpg`;
+            const { url } = await storagePut(fileKey, buffer, 'image/jpeg');
+            imageUrl = url;
+          }
+        }
+        return db.createRestaurantAdmin({
+          ...input,
+          image: imageUrl,
+          status: 'pending',
+          submittedBy: ctx.user.id,
+        });
+      }),
   }),
 
   // User Profile router
@@ -275,22 +357,209 @@ export const appRouter = router({
       .query(({ input }) => db.getRankingsByDistrict(input.city, input.district, input.limit)),
   }),
 
-  aiRecommendations: router({
-    create: protectedProcedure
+  // Admin router
+  admin: router({
+    // 数据概览
+    getStats: adminProcedure
+      .query(() => db.getAdminStats()),
+
+    // 用户管理（仅 super_admin）
+    getUsers: superAdminProcedure
+      .input(z.object({ limit: z.number().default(100), offset: z.number().default(0) }))
+      .query(({ input }) => db.getAllUsers(input.limit, input.offset)),
+
+    // 管理员管理（仅 super_admin）
+    getAdmins: superAdminProcedure
+      .query(() => db.getAdminUsers()),
+
+    setUserRole: superAdminProcedure
       .input(z.object({
-        query: z.string(),
-        recommendations: z.string().optional(),
-        conversationHistory: z.string().optional(),
+        userId: z.number(),
+        role: z.enum(['user', 'admin', 'super_admin']),
       }))
       .mutation(async ({ ctx, input }) => {
-        return db.createAiRecommendation({
-          userId: ctx.user.id,
-          query: input.query,
-          recommendations: input.recommendations,
-          conversationHistory: input.conversationHistory,
-        });
+        // 防止修改自己的角色
+        if (input.userId === ctx.user.id)
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '不能修改自己的角色' });
+        return db.setUserRole(input.userId, input.role);
       }),
-    
+
+    // 餐厅管理
+    getRestaurants: adminProcedure
+      .input(z.object({ limit: z.number().default(100), offset: z.number().default(0) }))
+      .query(({ input }) => db.getAllRestaurantsAdmin(input.limit, input.offset)),
+
+    createRestaurant: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        cuisine: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        district: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        phone: z.string().optional(),
+        image: z.string().optional(),
+        priceLevel: z.string().optional(),
+        status: z.enum(['published', 'pending', 'rejected']).default('published'),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Handle base64 image upload
+        let imageUrl = input.image;
+        if (imageUrl && imageUrl.startsWith('data:')) {
+          const parts = imageUrl.split(',');
+          const base64Data = parts[1];
+          if (base64Data) {
+            const buffer = Buffer.from(base64Data, 'base64');
+            const key = `restaurants/${Date.now()}.jpg`;
+            const { url } = await storagePut(key, buffer, 'image/jpeg');
+            imageUrl = url;
+          }
+        }
+        return db.createRestaurantAdmin({ ...input, image: imageUrl, status: input.status });
+      }),
+
+    updateRestaurant: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).optional(),
+        description: z.string().optional(),
+        cuisine: z.string().optional(),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        district: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        phone: z.string().optional(),
+        image: z.string().optional(),
+        priceLevel: z.string().optional(),
+        status: z.enum(['published', 'pending', 'rejected']).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        // Handle base64 image upload
+        if (data.image && data.image.startsWith('data:')) {
+          const parts = data.image.split(',');
+          const base64Data = parts[1];
+          if (base64Data) {
+            const buffer = Buffer.from(base64Data, 'base64');
+            const key = `restaurants/${Date.now()}.jpg`;
+            const { url } = await storagePut(key, buffer, 'image/jpeg');
+            data.image = url;
+          }
+        }
+        return db.updateRestaurant(id, data);
+      }),
+
+    deleteRestaurant: adminProcedure
+      .input(z.number())
+      .mutation(({ input }) => db.deleteRestaurant(input)),
+
+    updateRestaurantStatus: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(['published', 'pending', 'rejected']),
+      }))
+      .mutation(({ input }) => db.updateRestaurantStatus(input.id, input.status)),
+  }),
+
+  aiRecommendations: router({
+    // 真实 GLM-4 AI 对话接口
+    chat: protectedProcedure
+      .input(z.object({
+        message: z.string().min(1).max(500),
+        conversationHistory: z.array(z.object({
+          role: z.enum(['user', 'assistant']),
+          content: z.string(),
+        })).default([]),
+        // 用户实时位置（可选）
+        userLocation: z.object({
+          latitude: z.number(),
+          longitude: z.number(),
+          address: z.string().optional(),
+        }).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const user = ctx.user;
+
+        // 从数据库获取用户行为上下文 + 附近餐厅（如果有位置）
+        const [likedPosts, favRestaurants, recentPosts, nearbyRestaurants] = await Promise.all([
+          db.getMyLikedPostsWithDetails(user.id, 5),
+          db.getUserFavorites(user.id),
+          db.getPostsForFeed(8, 0),
+          input.userLocation
+            ? db.getNearbyRestaurants(input.userLocation.latitude, input.userLocation.longitude, 5, 8)
+            : Promise.resolve([]),
+        ]);
+
+        const favNames = (favRestaurants as any[]).slice(0, 5).map((r: any) => r.name).join('、') || '暂无';
+        const likedTitles = (likedPosts as any[]).slice(0, 5).map((p: any) => p.title).join('、') || '暂无';
+        const hotPosts = (recentPosts as any[]).slice(0, 5).map((p: any) => `《${p.title}》(${p.rating}星)`).join('、') || '暂无';
+
+        // 构建附近餐厅信息
+        const nearbyInfo = (nearbyRestaurants as any[]).length > 0
+          ? (nearbyRestaurants as any[]).map((r: any) => {
+              const dist = typeof r.distance === 'number' ? r.distance.toFixed(1) : '?';
+              return `${r.name}（${dist}km，${r.cuisine || '综合'}，${r.priceLevel || '未知价位'}，评分${r.averageRating || '暂无'}）`;
+            }).join('；')
+          : null;
+
+        const locationLine = input.userLocation?.address
+          ? `- 当前位置：${input.userLocation.address}`
+          : input.userLocation
+          ? `- 当前位置：经纬度 (${input.userLocation.latitude.toFixed(4)}, ${input.userLocation.longitude.toFixed(4)})`
+          : '';
+
+        const nearbyLine = nearbyInfo
+          ? `- 附近5km内餐厅：${nearbyInfo}`
+          : '';
+
+        const systemPrompt = `你是「吃了吗」美食社交平台的 AI 助手，专门帮助用户发现好餐厅、分享美食体验。
+
+当前用户信息：
+- 用户名：${user.name || '匿名用户'}
+- 收藏的餐厅：${favNames}
+- 最近点赞的帖子：${likedTitles}
+${locationLine}
+${nearbyLine}
+
+平台近期热门内容：${hotPosts}
+
+你的职责：
+1. 根据用户口味偏好和收藏历史给出个性化餐厅推荐
+2. 如果用户提供了位置，优先推荐附近餐厅列表中的餐厅
+3. 回答关于美食、餐厅、菜系的问题
+4. 帮助用户分析饮食偏好
+
+回复要求：
+- 用中文回复，语气友好自然
+- 推荐附近餐厅时说明距离和推荐理由
+- 回复简洁，不超过350字
+- 非美食相关问题礼貌引导回美食话题`;
+
+        const messages: GLM4Message[] = [
+          { role: 'system', content: systemPrompt },
+          ...input.conversationHistory.slice(-6).map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+          { role: 'user', content: input.message },
+        ];
+
+        const reply = await invokeGLM4(messages, { temperature: 0.8, maxTokens: 600 });
+
+        // 保存对话记录
+        await db.createAiRecommendation({
+          userId: user.id,
+          query: input.message,
+          recommendations: reply,
+          conversationHistory: JSON.stringify(input.conversationHistory),
+        });
+
+        return { reply };
+      }),
+
     getMyRecommendations: protectedProcedure
       .input(z.object({
         limit: z.number().default(10),

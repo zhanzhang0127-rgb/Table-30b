@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Heart, MessageCircle, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Trash2, Plus } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 export default function Feed() {
   const { isAuthenticated, loading, user } = useAuth();
   const [, navigate] = useLocation();
+  const [sort, setSort] = useState<"latest" | "hottest">("latest");
   const [offset, setOffset] = useState(0);
   const [allPosts, setAllPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
@@ -25,9 +26,14 @@ export default function Feed() {
 
   // Fetch posts
   const { data: postsData, isLoading } = trpc.posts.getFeed.useQuery(
-    { limit: 20, offset },
+    { limit: 20, offset, sort },
     { enabled: isAuthenticated }
   );
+
+  useEffect(() => {
+    setOffset(0);
+    setAllPosts([]);
+  }, [sort]);
 
   // Fetch user's liked posts from backend
   const { data: myLikes } = trpc.likes.getMyLikedPosts.useQuery(
@@ -144,13 +150,58 @@ export default function Feed() {
       {/* Main Content - no header, using global ResponsiveNav */}
       <main className="container py-6">
         <div className="max-w-2xl mx-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold text-foreground">社区</h1>
+            <Button
+              onClick={() => navigate("/publish")}
+              size="sm"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              发布
+            </Button>
+          </div>
+
+          <Card className="p-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSort("latest")}
+                className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                  sort === "latest"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-foreground/70 hover:bg-muted"
+                }`}
+              >
+                最新
+              </button>
+              <button
+                type="button"
+                onClick={() => setSort("hottest")}
+                className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                  sort === "hottest"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/50 text-foreground/70 hover:bg-muted"
+                }`}
+              >
+                最热
+              </button>
+            </div>
+          </Card>
+
           {isLoading && offset === 0 ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
             </div>
           ) : allPosts && allPosts.length > 0 ? (
             <>
-              {allPosts.map((post) => (
+              {allPosts.map((post) => {
+                const hasDualRatings = typeof post.tasteRating === "number" && typeof post.valueRating === "number";
+                const displayRating = hasDualRatings
+                  ? ((post.tasteRating + post.valueRating) / 2).toFixed(1)
+                  : post.rating;
+
+                return (
                 <Card
                   key={post.id}
                   className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
@@ -176,10 +227,10 @@ export default function Feed() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {post.rating && (
+                        {displayRating && (
                           <div className="flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full">
                             <span className="text-sm font-bold text-amber-500">★</span>
-                            <span className="text-sm font-semibold text-amber-700">{post.rating}</span>
+                            <span className="text-sm font-semibold text-amber-700">{displayRating}</span>
                           </div>
                         )}
                         {user?.id === post.userId && (
@@ -245,7 +296,8 @@ export default function Feed() {
                     </button>
                   </div>
                 </Card>
-              ))}
+                );
+              })}
 
               {/* Load More Button */}
               {postsData && (postsData as any[]).length >= 20 && (

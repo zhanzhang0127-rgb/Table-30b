@@ -33,20 +33,26 @@ export async function invokeGLM4(
   options: {
     temperature?: number;
     maxTokens?: number;
+    responseFormat?: { type: "json_object" };
   } = {}
 ): Promise<string> {
   if (!ENV.glm4ApiKey) {
     throw new Error("GLM4_API_KEY 未配置");
   }
 
+  const body: Record<string, unknown> = {
+    model: GLM4_MODEL,
+    messages,
+    temperature: options.temperature ?? 0.7,
+    max_tokens: options.maxTokens ?? 1500,
+  };
+  if (options.responseFormat) {
+    body.response_format = options.responseFormat;
+  }
+
   const response = await axios.post<GLM4Response>(
     GLM4_API_URL,
-    {
-      model: GLM4_MODEL,
-      messages,
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxTokens ?? 1500,
-    },
+    body,
     {
       headers: {
         Authorization: `Bearer ${ENV.glm4ApiKey}`,

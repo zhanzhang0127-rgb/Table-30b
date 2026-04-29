@@ -36,6 +36,10 @@ export const posts = mysqlTable("posts", {
   images: text("images"), // JSON array of image URLs
   restaurantId: int("restaurantId"), // 关联的餐厅
   rating: int("rating"), // 1-5 评分
+  postType: varchar("postType", { length: 20 }).notNull().default("dine-in"),
+  tasteRating: int("tasteRating"),
+  valueRating: int("valueRating"),
+  location: varchar("location", { length: 255 }),
   likes: int("likes").default(0),
   comments: int("comments").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

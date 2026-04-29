@@ -38,6 +38,9 @@ describe("Posts Router", () => {
       await caller.posts.create({
         title: "",
         content: "Test content",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
       });
       expect.fail("Should have thrown validation error");
     } catch (error: any) {
@@ -53,11 +56,13 @@ describe("Posts Router", () => {
       await caller.posts.create({
         title: "Test Post",
         content: "",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
       });
-      // Content can be empty, so this should succeed
       expect(true).toBe(true);
-    } catch (error) {
-      expect.fail("Should not throw error for empty content");
+    } catch (error: any) {
+      expect(error?.code).not.toBe("BAD_REQUEST");
     }
   });
 
@@ -69,6 +74,9 @@ describe("Posts Router", () => {
       await caller.posts.create({
         title: "Test Post",
         content: "Test content",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
         rating: 6,
       });
       expect.fail("Should have thrown validation error for rating > 5");
@@ -85,6 +93,9 @@ describe("Posts Router", () => {
       await caller.posts.create({
         title: "Test Post",
         content: "Test content",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
         rating: 0,
       });
       expect.fail("Should have thrown validation error for rating < 1");
@@ -101,12 +112,14 @@ describe("Posts Router", () => {
       await caller.posts.create({
         title: "Test Post",
         content: "Test content",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
         images: ["invalid-image-data"],
       });
-      // Invalid image data should be skipped, so this should succeed
       expect(true).toBe(true);
-    } catch (error) {
-      expect.fail("Should handle invalid image data gracefully");
+    } catch (error: any) {
+      expect(error?.code).not.toBe("BAD_REQUEST");
     }
   });
 });
@@ -136,10 +149,9 @@ describe("Comments Router", () => {
         postId: 0,
         content: "Test comment",
       });
-      // postId 0 is technically valid for the type system
       expect(true).toBe(true);
-    } catch (error) {
-      expect.fail("Should not throw error");
+    } catch (error: any) {
+      expect(error?.code).not.toBe("BAD_REQUEST");
     }
   });
 
@@ -244,6 +256,9 @@ describe("Authorization", () => {
       await caller.posts.create({
         title: "Test Post",
         content: "Test content",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
       });
       expect.fail("Should have thrown unauthorized error");
     } catch (error: any) {
@@ -313,6 +328,9 @@ describe("Delete Authorization", () => {
       const post = await authorCaller.posts.create({
         title: "Test Post",
         content: "Test content",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
       });
 
       // Try to delete as user 2

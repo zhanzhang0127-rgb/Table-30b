@@ -240,6 +240,18 @@ export default function PostDetail() {
     );
   }
 
+  const normalizeRating = (value: number) => Math.max(1, Math.min(5, Math.round(value)));
+  const renderStars = (value: number) => {
+    const safe = normalizeRating(value);
+    return `${"★".repeat(safe)}${"☆".repeat(5 - safe)}`;
+  };
+  const hasDualRatings = typeof post.tasteRating === "number" && typeof post.valueRating === "number";
+  const postTypeBadge = post.postType === "delivery"
+    ? "🛵 外卖"
+    : post.postType === "dine-in"
+    ? "🍽 堂食"
+    : "📝 未分类";
+
   return (
     <div className="min-h-screen bg-background">
       {/* Main Content */}
@@ -275,12 +287,6 @@ export default function PostDetail() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {post.rating && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-lg font-bold text-secondary">★</span>
-                      <span className="font-semibold text-foreground">{post.rating}</span>
-                    </div>
-                  )}
                   {user?.id === post.userId && (
                     <button
                       onClick={handleDeletePost}
@@ -296,6 +302,22 @@ export default function PostDetail() {
 
               {/* Post Title */}
               <h1 className="text-2xl font-bold text-foreground mb-2">{post.title}</h1>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground/80">
+                  {postTypeBadge}
+                </span>
+              </div>
+              {hasDualRatings ? (
+                <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-foreground/75">
+                  <span>口味 {renderStars(post.tasteRating!)} ({post.tasteRating})</span>
+                  <span>性价比 {renderStars(post.valueRating!)} ({post.valueRating})</span>
+                </div>
+              ) : post.rating ? (
+                <div className="mb-2 text-sm text-foreground/75">综合评分 {renderStars(post.rating)} ({post.rating})</div>
+              ) : null}
+              {post.postType === "dine-in" && post.location && (
+                <p className="mb-2 text-sm text-foreground/70">📍 {post.location}</p>
+              )}
               <p className="text-foreground/70">{post.content}</p>
             </div>
 

@@ -8,6 +8,8 @@ import { TRPCError } from "@trpc/server";
 import { storagePut } from "./storage";
 import { ENV } from "./_core/env";
 import { invokeGLM4, type GLM4Message } from "./_core/glm4";
+import { transcribeAudio, transcribeBuffer } from "./_core/voiceTranscription";
+import { extractPostFromTranscript } from "./_core/voicePostExtractor";
 // Using native fetch (Node 18+)
 
 // Admin procedure: allows both admin and super_admin
@@ -45,6 +47,10 @@ export const appRouter = router({
         content: z.string(),
         images: z.array(z.string()).optional(),
         restaurantId: z.number().optional(),
+        postType: z.enum(['delivery', 'dine-in']),
+        tasteRating: z.number().int().min(1).max(5),
+        valueRating: z.number().int().min(1).max(5),
+        location: z.string().max(255).optional(),
         rating: z.number().min(1).max(5).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -77,6 +83,11 @@ export const appRouter = router({
             }
           }
         }
+
+        const averageRating = Math.round((input.tasteRating + input.valueRating) / 2);
+        const normalizedLocation = input.postType === 'dine-in'
+          ? (input.location?.trim() || null)
+          : null;
         
         return db.createPost({
           userId: ctx.user.id,
@@ -84,7 +95,11 @@ export const appRouter = router({
           content: input.content,
           images: imageUrls.length > 0 ? JSON.stringify(imageUrls) : null,
           restaurantId: input.restaurantId,
-          rating: input.rating,
+          rating: averageRating,
+          postType: input.postType,
+          tasteRating: input.tasteRating,
+          valueRating: input.valueRating,
+          location: normalizedLocation,
         });
       }),
     
@@ -92,8 +107,9 @@ export const appRouter = router({
       .input(z.object({
         limit: z.number().default(20),
         offset: z.number().default(0),
+        sort: z.enum(['latest', 'hottest']).default('latest'),
       }))
-      .query(({ input }) => db.getPostsForFeed(input.limit, input.offset)),
+      .query(({ input }) => db.getPostsForFeed(input.limit, input.offset, input.sort)),
     
     getByUser: publicProcedure
       .input(z.object({
@@ -139,6 +155,13 @@ export const appRouter = router({
         offset: z.number().default(0),
       }))
       .query(({ input }) => db.getRestaurantsByDistrict(input.city, input.district, input.limit, input.offset)),
+
+    search: publicProcedure
+      .input(z.object({
+        q: z.string().min(1),
+        limit: z.number().default(10),
+      }))
+      .query(({ input }) => db.searchRestaurants(input.q, input.limit)),
 
     // 获取已发布餐厅列表（公开）
     getPublished: publicProcedure
@@ -341,20 +364,12 @@ export const appRouter = router({
 
   // Rankings router
   rankings: router({
-    getByCity: publicProcedure
+    getByDimension: publicProcedure
       .input(z.object({
-        city: z.string(),
+        dimension: z.enum(['overall', 'hotThisWeek', 'topRated', 'bestValue', 'newlyFamous']),
         limit: z.number().default(20),
       }))
-      .query(({ input }) => db.getRankingsByCity(input.city, input.limit)),
-    
-    getByDistrict: publicProcedure
-      .input(z.object({
-        city: z.string(),
-        district: z.string(),
-        limit: z.number().default(20),
-      }))
-      .query(({ input }) => db.getRankingsByDistrict(input.city, input.district, input.limit)),
+      .query(({ input }) => db.getRestaurantRankings(input.dimension, input.limit)),
   }),
 
   // Admin router
@@ -565,6 +580,104 @@ ${nearbyLine}
         limit: z.number().default(10),
       }))
       .query(({ ctx, input }) => db.getUserAiRecommendations(ctx.user.id, input.limit)),
+  }),
+
+  voice: router({
+    uploadAudio: protectedProcedure
+      .input(z.object({
+        dataUrl: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!input.dataUrl.startsWith('data:')) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '音频格式无效' });
+        }
+        const sepIdx = input.dataUrl.indexOf(';base64,');
+        if (sepIdx === -1) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '音频必须为 base64 data URL' });
+        }
+        const header = input.dataUrl.slice(5, sepIdx); // strip "data:" prefix
+        const mime = (header.split(';')[0] || 'audio/webm').trim() || 'audio/webm';
+        const base64Data = input.dataUrl.slice(sepIdx + ';base64,'.length);
+        if (!base64Data) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '音频内容为空' });
+        }
+        const buffer = Buffer.from(base64Data, 'base64');
+        if (buffer.length > 10 * 1024 * 1024) {
+          throw new TRPCError({ code: 'PAYLOAD_TOO_LARGE', message: '音频超过 10MB 上限' });
+        }
+        const ext = mime.includes('webm') ? 'webm' : mime.includes('mp4') || mime.includes('m4a') ? 'm4a' : mime.includes('wav') ? 'wav' : 'mp3';
+        const key = `voice/${ctx.user.id}/${Date.now()}.${ext}`;
+        try {
+          const { url } = await storagePut(key, buffer, mime);
+          return { url };
+        } catch (error) {
+          console.error('Voice upload failed:', error);
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '音频上传失败' });
+        }
+      }),
+
+    transcribe: protectedProcedure
+      .input(z.object({
+        audioUrl: z.string().min(1),
+        language: z.string().default('zh'),
+      }))
+      .mutation(async ({ input }) => {
+        const result = await transcribeAudio({
+          audioUrl: input.audioUrl,
+          language: input.language,
+        });
+        if ('error' in result) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: result.error, cause: result });
+        }
+        return { text: result.text, language: result.language, duration: result.duration };
+      }),
+
+    // Optimized: skip storage upload, send audio buffer directly to Whisper
+    transcribeDirect: protectedProcedure
+      .input(z.object({
+        dataUrl: z.string().min(1),
+        language: z.string().default('zh'),
+      }))
+      .mutation(async ({ input }) => {
+        if (!input.dataUrl.startsWith('data:')) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '音频格式无效' });
+        }
+        const sepIdx = input.dataUrl.indexOf(';base64,');
+        if (sepIdx === -1) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '音频必须为 base64 data URL' });
+        }
+        const header = input.dataUrl.slice(5, sepIdx);
+        const mimeType = (header.split(';')[0] || 'audio/webm').trim() || 'audio/webm';
+        const base64Data = input.dataUrl.slice(sepIdx + ';base64,'.length);
+        if (!base64Data) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '音频内容为空' });
+        }
+        const buffer = Buffer.from(base64Data, 'base64');
+        if (buffer.length > 10 * 1024 * 1024) {
+          throw new TRPCError({ code: 'PAYLOAD_TOO_LARGE', message: '音频超过 10MB 上限' });
+        }
+        const result = await transcribeBuffer({ buffer, mimeType, language: input.language });
+        if ('error' in result) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: result.error, cause: result });
+        }
+        return { text: result.text, language: result.language, duration: result.duration };
+      }),
+
+    extractPost: protectedProcedure
+      .input(z.object({
+        transcript: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          return await extractPostFromTranscript(input.transcript);
+        } catch (error) {
+          console.error('Voice extract failed:', error);
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: error instanceof Error ? error.message : 'AI 整理失败',
+          });
+        }
+      }),
   }),
 });
 

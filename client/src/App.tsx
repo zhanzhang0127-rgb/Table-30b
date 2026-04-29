@@ -8,13 +8,9 @@ import Home from "./pages/Home";
 import Feed from "./pages/Feed";
 import Publish from "./pages/Publish";
 import Profile from "./pages/Profile";
-import Restaurants from "./pages/Restaurants";
-import Rankings from "./pages/Rankings";
 import AiChat from "./pages/AiChat";
-import RestaurantDetail from "./pages/RestaurantDetail";
 import PostDetail from "./pages/PostDetail";
 import Admin from "./pages/Admin";
-import SubmitRestaurant from "./pages/SubmitRestaurant";
 import { ResponsiveNav } from "./components/ResponsiveNav";
 
 function Router() {
@@ -25,13 +21,9 @@ function Router() {
       <Route path={"/feed"} component={Feed} />
       <Route path={"/publish"} component={Publish} />
       <Route path={"/profile"} component={Profile} />
-      <Route path={"/restaurants"} component={Restaurants} />
-      <Route path={"/rankings"} component={Rankings} />
       <Route path={"/ai-chat"} component={AiChat} />
       <Route path={"/post/:id"} component={PostDetail} />
-      <Route path={"/restaurant/:id"} component={RestaurantDetail} />
       <Route path={"/admin"} component={Admin} />
-      <Route path={"/submit-restaurant"} component={SubmitRestaurant} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

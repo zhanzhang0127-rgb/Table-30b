@@ -6,6 +6,7 @@ import { Send, Loader2, Bot, User, Sparkles, MapPin, MapPinOff } from "lucide-re
 import { useLocation } from "wouter";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocationPicker } from "@/hooks/useLocationPicker";
 import { toast } from "sonner";
 
 interface Message {
@@ -13,12 +14,6 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
-}
-
-interface UserLocation {
-  latitude: number;
-  longitude: number;
-  address?: string;
 }
 
 const QUICK_PROMPTS = [
@@ -43,11 +38,13 @@ export default function AiChat() {
   const [conversationHistory, setConversationHistory] = useState<
     { role: "user" | "assistant"; content: string }[]
   >([]);
-  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
-  const [locationLoading, setLocationLoading] = useState(false);
+  const {
+    location: userLocation,
+    loading: locationLoading,
+    fetchLocation,
+    clearLocation,
+  } = useLocationPicker();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const reverseGeocode = trpc.restaurants.reverseGeocode.useMutation();
 
   const chatMutation = trpc.aiRecommendations.chat.useMutation({
     onSuccess: (data) => {
@@ -84,46 +81,24 @@ export default function AiChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleGetLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error("你的浏览器不支持定位功能");
-      return;
-    }
-    setLocationLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        let address: string | undefined;
-        try {
-          const result = await reverseGeocode.mutateAsync({ latitude: lat, longitude: lng });
-          address = result.address;
-        } catch {
-          // 高德解析失败也没关系，坐标还是有效的
-        }
-        setUserLocation({ latitude: lat, longitude: lng, address });
-        setLocationLoading(false);
-        // 自动发一条提示消息
-        const locMsg = address ? `已获取你的位置：${address}` : `已获取你的位置（经纬度 ${lat.toFixed(4)}, ${lng.toFixed(4)}）`;
-        const sysMsg: Message = {
-          id: `loc-${Date.now()}`,
-          role: "assistant",
-          content: `📍 ${locMsg}\n\n现在你可以问我「附近有什么好吃的」，我会根据你的实时位置推荐附近餐厅！`,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, sysMsg]);
-        toast.success(`位置获取成功：${address || "已获取坐标"}`);  
-      },
-      (err) => {
-        setLocationLoading(false);
-          toast.error(err.code === 1 ? "请允许浏览器访问你的位置" : "无法获取位置，请稍后重试");
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+  const handleGetLocation = async () => {
+    const nextLocation = await fetchLocation();
+    if (!nextLocation) return;
+
+    const locMsg = nextLocation.address
+      ? `已获取你的位置：${nextLocation.address}`
+      : `已获取你的位置（经纬度 ${nextLocation.latitude.toFixed(4)}, ${nextLocation.longitude.toFixed(4)}）`;
+    const sysMsg: Message = {
+      id: `loc-${Date.now()}`,
+      role: "assistant",
+      content: `📍 ${locMsg}\n\n现在你可以问我「附近有什么好吃的」，我会根据你的实时位置推荐附近餐厅！`,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, sysMsg]);
   };
 
   const handleClearLocation = () => {
-    setUserLocation(null);
+    clearLocation();
     toast("已关闭位置共享");
   };
 

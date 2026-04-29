@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Heart, MapPin, MessageCircle, Users, Utensils, Zap, AlertCircle } from "lucide-react";
+import { MessageCircle, Zap, Flame, AlertCircle } from "lucide-react";
 import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
@@ -54,6 +54,23 @@ export default function Home() {
             >
               ×
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dev-only login banner: bypasses Manus OAuth in local dev */}
+      {import.meta.env.DEV && (
+        <div className="bg-yellow-100 border-b border-yellow-300 px-4 py-2">
+          <div className="container flex items-center justify-between gap-3 text-yellow-900">
+            <p className="text-sm font-medium">
+              🛠️ 开发模式：可以一键以 owner 账号登录（仅本地可用）
+            </p>
+            <a
+              href="/api/dev-login"
+              className="text-sm font-semibold underline hover:no-underline"
+            >
+              Dev 登录 →
+            </a>
           </div>
         </div>
       )}
@@ -151,12 +168,12 @@ export default function Home() {
             <Card className="p-6 text-center hover:shadow-lg transition-shadow">
               <div className="flex justify-center mb-4">
                 <div className="p-3 bg-accent/10 rounded-full">
-                  <MapPin className="w-6 h-6 text-accent" />
+                  <Flame className="w-6 h-6 text-accent" />
                 </div>
               </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">发现排行榜</h3>
+              <h3 className="text-lg font-bold text-foreground mb-2">最新与最热</h3>
               <p className="text-foreground/70">
-                浏览你所在地区最受欢迎的餐厅排行榜。
+                在社区里一键切换「最新」和「最热」，快速发现真实评价。
               </p>
             </Card>
           </div>

@@ -255,6 +255,9 @@ describe("Posts Router - Authentication", () => {
       await caller.posts.create({
         title: "Test Post",
         content: "This is a test post",
+        postType: "delivery",
+        tasteRating: 4,
+        valueRating: 4,
       });
       expect.fail("Should have thrown an error");
     } catch (error) {

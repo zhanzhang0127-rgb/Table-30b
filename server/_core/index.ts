@@ -50,6 +50,17 @@ async function startServer() {
     serveStatic(app);
   }
 
+  // Some stale client caches may request malformed placeholder URLs.
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const message = err instanceof Error ? err.message : String(err);
+    const isMalformedDecode = err instanceof URIError || message.includes("Failed to decode param");
+    if (isMalformedDecode) {
+      res.status(400).send("Bad Request");
+      return;
+    }
+    next(err);
+  });
+
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
 

@@ -1,9 +1,29 @@
-import { eq, desc, and, count, sql } from "drizzle-orm";
+import { eq, desc, and, count, sql, avg, like, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, posts, restaurants, comments, userProfiles, favorites, aiRecommendations, rankings, postLikes, commentLikes } from "../drizzle/schema";
+import { InsertUser, users, posts, restaurants, comments, userProfiles, favorites, aiRecommendations, postLikes, commentLikes } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _hasExtendedPostColumns: boolean | null = null;
+let _hasExtendedPostColumnsPromise: Promise<boolean> | null = null;
+const LEGACY_META_PREFIX = "<!--chileoma-meta:";
+const LEGACY_META_SUFFIX = "-->";
+
+type PostTypeValue = 'delivery' | 'dine-in';
+
+type LegacyPostMeta = {
+  postType: PostTypeValue | null;
+  tasteRating: number | null;
+  valueRating: number | null;
+  location: string | null;
+};
+
+const EMPTY_LEGACY_POST_META: LegacyPostMeta = {
+  postType: null,
+  tasteRating: null,
+  valueRating: null,
+  location: null,
+};
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -16,6 +36,141 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+function isUnknownColumnError(error: unknown): boolean {
+  if (!error) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Unknown column");
+}
+
+async function hasExtendedPostColumns(): Promise<boolean> {
+  if (_hasExtendedPostColumns !== null) {
+    return _hasExtendedPostColumns;
+  }
+
+  if (_hasExtendedPostColumnsPromise) {
+    return _hasExtendedPostColumnsPromise;
+  }
+
+  _hasExtendedPostColumnsPromise = (async () => {
+    const db = await getDb();
+    if (!db) {
+      _hasExtendedPostColumns = false;
+      return false;
+    }
+
+    try {
+      await db.execute(sql`SELECT postType, tasteRating, valueRating, location FROM posts LIMIT 1`);
+      _hasExtendedPostColumns = true;
+      return true;
+    } catch (error) {
+      if (isUnknownColumnError(error)) {
+        console.warn("[Database] posts table is using legacy schema; extended post fields are disabled.");
+      }
+      _hasExtendedPostColumns = false;
+      return false;
+    } finally {
+      _hasExtendedPostColumnsPromise = null;
+    }
+  })();
+
+  return _hasExtendedPostColumnsPromise;
+}
+
+function withLegacyPostDefaults<T extends Record<string, unknown>>(rows: T[]): Array<T & {
+  postType: PostTypeValue;
+  tasteRating: number | null;
+  valueRating: number | null;
+  location: string | null;
+}> {
+  return rows.map((row) => {
+    const parsed = extractLegacyPostMetaFromContent(row);
+    return {
+      ...row,
+      content: parsed.content,
+      postType: parsed.postType ?? 'dine-in',
+      tasteRating: parsed.tasteRating,
+      valueRating: parsed.valueRating,
+      location: parsed.location,
+    };
+  });
+}
+
+function normalizeRating(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  if (rounded < 1 || rounded > 5) return null;
+  return rounded;
+}
+
+function normalizePostType(value: unknown): PostTypeValue | null {
+  if (value === 'delivery' || value === 'dine-in') return value;
+  return null;
+}
+
+function normalizeLocation(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 255) : null;
+}
+
+function serializeLegacyPostMeta(content: string | null | undefined, meta: LegacyPostMeta): string | null {
+  const hasMeta = meta.postType || meta.tasteRating || meta.valueRating || meta.location;
+  const base = (content ?? '').trim();
+  if (!hasMeta) {
+    return base || null;
+  }
+
+  const encoded = JSON.stringify(meta);
+  const marker = `${LEGACY_META_PREFIX}${encoded}${LEGACY_META_SUFFIX}`;
+  return base ? `${base}\n\n${marker}` : marker;
+}
+
+function parseLegacyPostMeta(raw: string): LegacyPostMeta {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      postType: normalizePostType(parsed.postType),
+      tasteRating: normalizeRating(parsed.tasteRating),
+      valueRating: normalizeRating(parsed.valueRating),
+      location: normalizeLocation(parsed.location),
+    };
+  } catch {
+    return EMPTY_LEGACY_POST_META;
+  }
+}
+
+function extractLegacyPostMetaFromContent<T extends Record<string, unknown>>(row: T): {
+  content: string | null | undefined;
+  postType: PostTypeValue | null;
+  tasteRating: number | null;
+  valueRating: number | null;
+  location: string | null;
+} {
+  const contentRaw = row.content;
+  if (typeof contentRaw !== 'string') {
+    return {
+      content: contentRaw as string | null | undefined,
+      ...EMPTY_LEGACY_POST_META,
+    };
+  }
+
+  const start = contentRaw.lastIndexOf(LEGACY_META_PREFIX);
+  const end = contentRaw.lastIndexOf(LEGACY_META_SUFFIX);
+  if (start === -1 || end === -1 || end <= start) {
+    return { content: contentRaw, ...EMPTY_LEGACY_POST_META };
+  }
+
+  const jsonStart = start + LEGACY_META_PREFIX.length;
+  const jsonRaw = contentRaw.slice(jsonStart, end).trim();
+  const meta = parseLegacyPostMeta(jsonRaw);
+  const clean = contentRaw.slice(0, start).trimEnd();
+
+  return {
+    content: clean || null,
+    ...meta,
+  };
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -94,12 +249,63 @@ export async function getUserByOpenId(openId: string) {
 export async function createPost(post: typeof posts.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  if (!(await hasExtendedPostColumns())) {
+    const legacyMeta: LegacyPostMeta = {
+      postType: normalizePostType(post.postType),
+      tasteRating: normalizeRating(post.tasteRating),
+      valueRating: normalizeRating(post.valueRating),
+      location: normalizeLocation(post.location),
+    };
+    const legacyPost: typeof posts.$inferInsert = {
+      userId: post.userId,
+      title: post.title,
+      content: serializeLegacyPostMeta(post.content ?? null, legacyMeta),
+      images: post.images ?? null,
+      restaurantId: post.restaurantId ?? null,
+      rating: post.rating ?? null,
+    };
+    return db.execute(sql`
+      INSERT INTO posts (
+        userId,
+        title,
+        content,
+        images,
+        restaurantId,
+        rating
+      ) VALUES (
+        ${legacyPost.userId},
+        ${legacyPost.title},
+        ${legacyPost.content},
+        ${legacyPost.images},
+        ${legacyPost.restaurantId},
+        ${legacyPost.rating}
+      )
+    `);
+  }
   return db.insert(posts).values(post);
 }
 
 export async function getPostsByUserId(userId: number, limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
+  if (!(await hasExtendedPostColumns())) {
+    const legacyResult = await db.select({
+      id: posts.id,
+      userId: posts.userId,
+      title: posts.title,
+      content: posts.content,
+      images: posts.images,
+      restaurantId: posts.restaurantId,
+      rating: posts.rating,
+      likes: posts.likes,
+      comments: posts.comments,
+      createdAt: posts.createdAt,
+      updatedAt: posts.updatedAt,
+      userName: users.name,
+    }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.userId, userId)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+    return withLegacyPostDefaults(legacyResult);
+  }
+
   const result = await db.select({
     id: posts.id,
     userId: posts.userId,
@@ -108,6 +314,10 @@ export async function getPostsByUserId(userId: number, limit: number = 20, offse
     images: posts.images,
     restaurantId: posts.restaurantId,
     rating: posts.rating,
+    postType: posts.postType,
+    tasteRating: posts.tasteRating,
+    valueRating: posts.valueRating,
+    location: posts.location,
     likes: posts.likes,
     comments: posts.comments,
     createdAt: posts.createdAt,
@@ -117,9 +327,34 @@ export async function getPostsByUserId(userId: number, limit: number = 20, offse
   return result;
 }
 
-export async function getPostsForFeed(limit: number = 20, offset: number = 0) {
+export type FeedSort = 'latest' | 'hottest';
+
+export async function getPostsForFeed(limit: number = 20, offset: number = 0, sort: FeedSort = 'latest') {
   const db = await getDb();
   if (!db) return [];
+  const hotScore = sql<number>`COALESCE(${posts.likes}, 0) + COALESCE(${posts.comments}, 0)`;
+  const orderByClause = sort === 'hottest'
+    ? [desc(hotScore), desc(posts.createdAt)]
+    : [desc(posts.createdAt)];
+
+  if (!(await hasExtendedPostColumns())) {
+    const legacyResult = await db.select({
+      id: posts.id,
+      userId: posts.userId,
+      title: posts.title,
+      content: posts.content,
+      images: posts.images,
+      restaurantId: posts.restaurantId,
+      rating: posts.rating,
+      likes: posts.likes,
+      comments: posts.comments,
+      createdAt: posts.createdAt,
+      updatedAt: posts.updatedAt,
+      userName: users.name,
+    }).from(posts).leftJoin(users, eq(posts.userId, users.id)).orderBy(...orderByClause).limit(limit).offset(offset);
+    return withLegacyPostDefaults(legacyResult);
+  }
+
   const result = await db.select({
     id: posts.id,
     userId: posts.userId,
@@ -128,18 +363,42 @@ export async function getPostsForFeed(limit: number = 20, offset: number = 0) {
     images: posts.images,
     restaurantId: posts.restaurantId,
     rating: posts.rating,
+    postType: posts.postType,
+    tasteRating: posts.tasteRating,
+    valueRating: posts.valueRating,
+    location: posts.location,
     likes: posts.likes,
     comments: posts.comments,
     createdAt: posts.createdAt,
     updatedAt: posts.updatedAt,
     userName: users.name,
-  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
+  }).from(posts).leftJoin(users, eq(posts.userId, users.id)).orderBy(...orderByClause).limit(limit).offset(offset);
   return result;
 }
 
 export async function getPostById(postId: number) {
   const db = await getDb();
   if (!db) return undefined;
+
+  if (!(await hasExtendedPostColumns())) {
+    const legacyResult = await db.select({
+      id: posts.id,
+      userId: posts.userId,
+      title: posts.title,
+      content: posts.content,
+      images: posts.images,
+      restaurantId: posts.restaurantId,
+      rating: posts.rating,
+      likes: posts.likes,
+      comments: posts.comments,
+      createdAt: posts.createdAt,
+      updatedAt: posts.updatedAt,
+      userName: users.name,
+    }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.id, postId)).limit(1);
+
+    return withLegacyPostDefaults(legacyResult)[0];
+  }
+
   const result = await db.select({
     id: posts.id,
     userId: posts.userId,
@@ -148,6 +407,10 @@ export async function getPostById(postId: number) {
     images: posts.images,
     restaurantId: posts.restaurantId,
     rating: posts.rating,
+    postType: posts.postType,
+    tasteRating: posts.tasteRating,
+    valueRating: posts.valueRating,
+    location: posts.location,
     likes: posts.likes,
     comments: posts.comments,
     createdAt: posts.createdAt,
@@ -187,6 +450,25 @@ export async function getRestaurantsByDistrict(city: string, district: string, l
   const db = await getDb();
   if (!db) return [];
   return db.select().from(restaurants).where(and(eq(restaurants.city, city), eq(restaurants.district, district))).limit(limit).offset(offset);
+}
+
+export async function searchRestaurants(q: string, limit: number = 10) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const keyword = q.trim();
+  if (!keyword) return [];
+
+  return db
+    .select({
+      id: restaurants.id,
+      name: restaurants.name,
+      cuisine: restaurants.cuisine,
+      address: restaurants.address,
+    })
+    .from(restaurants)
+    .where(and(eq(restaurants.status, 'published'), like(restaurants.name, `%${keyword}%`)))
+    .limit(limit);
 }
 
 // User Profile queries
@@ -351,6 +633,30 @@ export async function getMyLikedPosts(userId: number): Promise<number[]> {
 export async function getMyLikedPostsWithDetails(userId: number, limit: number = 20, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
+
+  if (!(await hasExtendedPostColumns())) {
+    const legacyResult = await db.select({
+      id: posts.id,
+      userId: posts.userId,
+      title: posts.title,
+      content: posts.content,
+      images: posts.images,
+      restaurantId: posts.restaurantId,
+      rating: posts.rating,
+      likes: posts.likes,
+      comments: posts.comments,
+      createdAt: posts.createdAt,
+      updatedAt: posts.updatedAt,
+      userName: users.name,
+    }).from(postLikes)
+      .innerJoin(posts, eq(postLikes.postId, posts.id))
+      .leftJoin(users, eq(posts.userId, users.id))
+      .where(eq(postLikes.userId, userId))
+      .orderBy(desc(postLikes.createdAt))
+      .limit(limit).offset(offset);
+    return withLegacyPostDefaults(legacyResult);
+  }
+
   const result = await db.select({
     id: posts.id,
     userId: posts.userId,
@@ -359,6 +665,10 @@ export async function getMyLikedPostsWithDetails(userId: number, limit: number =
     images: posts.images,
     restaurantId: posts.restaurantId,
     rating: posts.rating,
+    postType: posts.postType,
+    tasteRating: posts.tasteRating,
+    valueRating: posts.valueRating,
+    location: posts.location,
     likes: posts.likes,
     comments: posts.comments,
     createdAt: posts.createdAt,
@@ -427,17 +737,72 @@ export async function getUserAiRecommendations(userId: number, limit: number = 1
   return db.select().from(aiRecommendations).where(eq(aiRecommendations.userId, userId)).orderBy(desc(aiRecommendations.createdAt)).limit(limit);
 }
 
-// Rankings queries
-export async function getRankingsByCity(city: string, limit: number = 20) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(rankings).where(eq(rankings.city, city)).orderBy(rankings.rank).limit(limit);
-}
+export type RankingDimension = 'overall' | 'hotThisWeek' | 'topRated' | 'bestValue' | 'newlyFamous';
 
-export async function getRankingsByDistrict(city: string, district: string, limit: number = 20) {
+// Rankings queries (real-time from posts)
+export async function getRestaurantRankings(dimension: RankingDimension, limit: number = 20) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(rankings).where(and(eq(rankings.city, city), eq(rankings.district, district))).orderBy(rankings.rank).limit(limit);
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({
+      id: restaurants.id,
+      name: restaurants.name,
+      cuisine: restaurants.cuisine,
+      address: restaurants.address,
+      priceLevel: restaurants.priceLevel,
+      image: restaurants.image,
+      createdAt: restaurants.createdAt,
+      postCount: count(posts.id),
+      avgRating: avg(posts.rating),
+      weekPosts: sql<number>`SUM(CASE WHEN ${posts.createdAt} >= ${sevenDaysAgo} THEN 1 ELSE 0 END)`,
+    })
+    .from(restaurants)
+    .innerJoin(posts, and(eq(posts.restaurantId, restaurants.id), isNotNull(posts.rating)))
+    .where(eq(restaurants.status, 'published'))
+    .groupBy(restaurants.id);
+
+  const filtered = rows.filter((row) => {
+    if (dimension === 'bestValue') {
+      return row.priceLevel === '便宜';
+    }
+    if (dimension === 'newlyFamous') {
+      return new Date(row.createdAt) >= thirtyDaysAgo;
+    }
+    return true;
+  });
+
+  const scored = filtered.map((row) => {
+    const avgRatingValue = Number.parseFloat(String(row.avgRating ?? '0'));
+    const postCountValue = Number(row.postCount ?? 0);
+    const weekPostsValue = Number(row.weekPosts ?? 0);
+
+    const avgRatingSafe = Number.isFinite(avgRatingValue) ? avgRatingValue : 0;
+    const postCountSafe = Number.isFinite(postCountValue) ? postCountValue : 0;
+    const weekPostsSafe = Number.isFinite(weekPostsValue) ? weekPostsValue : 0;
+
+    let score = 0;
+    if (dimension === 'overall') score = 0.6 * avgRatingSafe + 0.4 * Math.log(postCountSafe + 1);
+    if (dimension === 'hotThisWeek') score = weekPostsSafe;
+    if (dimension === 'topRated') score = avgRatingSafe;
+    if (dimension === 'bestValue') score = avgRatingSafe;
+    if (dimension === 'newlyFamous') score = avgRatingSafe;
+
+    return {
+      ...row,
+      avgRating: avgRatingSafe,
+      postCount: postCountSafe,
+      weekPosts: weekPostsSafe,
+      score,
+    };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score || b.avgRating - a.avgRating || b.postCount - a.postCount)
+    .slice(0, limit);
 }
 
 

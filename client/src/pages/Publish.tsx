@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { ImagePlus, Loader2, X, ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
@@ -11,6 +12,7 @@ import { toast } from "sonner";
 
 export default function Publish() {
   const { user, loading, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const [, navigate] = useLocation();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -27,11 +29,11 @@ export default function Publish() {
 
   const createPostMutation = trpc.posts.create.useMutation({
     onSuccess: () => {
-      toast.success("发布成功！");
+      toast.success(t("publish.toastSuccess"));
       navigate("/feed");
     },
     onError: (error) => {
-      toast.error("发布失败：" + error.message);
+      toast.error(t("publish.toastFailed", { message: error.message }));
     },
   });
 
@@ -59,7 +61,7 @@ export default function Publish() {
 
   const handleSubmit = async () => {
     if (!title.trim() || !content.trim()) {
-      toast.error("请填写标题和内容");
+      toast.error(t("publish.toastRequired"));
       return;
     }
 
@@ -95,46 +97,46 @@ export default function Publish() {
             className="flex items-center gap-2 text-foreground/60 hover:text-foreground mb-4 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm font-medium">返回社区</span>
+            <span className="text-sm font-medium">{t("publish.back")}</span>
           </button>
 
           <Card className="p-8">
-            <h1 className="text-3xl font-bold text-foreground mb-8">分享你的美食故事</h1>
+            <h1 className="text-3xl font-bold text-foreground mb-8">{t("publish.title")}</h1>
 
             {/* Title Input */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                标题 * <span className="text-xs text-foreground/50 font-normal">（如：某餐厅的招牌菜真绝了）</span>
+                {t("publish.titleLabel")} <span className="text-xs text-foreground/50 font-normal">{t("publish.titleHelp")}</span>
               </label>
               <Input
-                placeholder="例如：XXX餐厅的招牌菜、这家店的环境超舒服..."
+                placeholder={t("publish.titlePlaceholder")}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 maxLength={100}
                 className="bg-muted/50 border-border"
               />
-              <p className="text-xs text-foreground/50 mt-1">{title.length}/100 字符</p>
+              <p className="text-xs text-foreground/50 mt-1">{t("publish.chars", { count: title.length, max: 100 })}</p>
             </div>
 
             {/* Content Textarea */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                内容 * <span className="text-xs text-foreground/50 font-normal">（分享你的美食体验和感受）</span>
+                {t("publish.contentLabel")} <span className="text-xs text-foreground/50 font-normal">{t("publish.contentHelp")}</span>
               </label>
               <Textarea
-                placeholder="例如：这家店的菜品很新鲜，特别推荐他们的...\n环境很舒适，适合和朋友聚餐...\n价格也很合理，性价比很高..."
+                placeholder={t("publish.contentPlaceholder")}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 maxLength={1000}
                 className="bg-muted/50 border-border min-h-40 resize-none"
               />
-              <p className="text-xs text-foreground/50 mt-1">{content.length}/1000 字符</p>
+              <p className="text-xs text-foreground/50 mt-1">{t("publish.chars", { count: content.length, max: 1000 })}</p>
             </div>
 
             {/* Rating */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                评分（可选）
+                {t("publish.ratingOptional")}
               </label>
               <div className="flex gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
@@ -154,7 +156,7 @@ export default function Publish() {
             {/* Image Upload */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-foreground mb-2">
-                上传图片（最多9张）
+                {t("publish.uploadImages")}
               </label>
               
               {/* Image Preview Grid */}
@@ -191,8 +193,8 @@ export default function Publish() {
                   />
                   <div className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors">
                     <ImagePlus className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm font-medium text-foreground">点击或拖拽上传图片</p>
-                    <p className="text-xs text-muted-foreground">支持 JPG、PNG、WebP 格式</p>
+                    <p className="text-sm font-medium text-foreground">{t("publish.uploadCta")}</p>
+                    <p className="text-xs text-muted-foreground">{t("publish.uploadSupport")}</p>
                   </div>
                 </label>
               )}
@@ -206,26 +208,26 @@ export default function Publish() {
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
               >
                 {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {isSubmitting ? "发布中..." : "发布"}
+                {isSubmitting ? t("publish.submitting") : t("publish.submit")}
               </Button>
               <Button 
                 variant="outline"
                 onClick={() => navigate("/feed")}
                 disabled={isSubmitting}
               >
-                取消
+                {t("common.cancel")}
               </Button>
             </div>
           </Card>
 
           {/* Tips */}
           <Card className="mt-8 p-6 bg-muted/30 border-0">
-            <h3 className="font-semibold text-foreground mb-3">💡 分享小贴士</h3>
+            <h3 className="font-semibold text-foreground mb-3">💡 {t("publish.tipsTitle")}</h3>
             <ul className="space-y-2 text-sm text-foreground/70">
-              <li>• 清晰的图片能让你的分享更吸引人</li>
-              <li>• 详细的描述帮助其他用户更好地了解</li>
-              <li>• 给餐厅评分，帮助社区了解质量</li>
-              <li>• 遵守社区规则，不发布不当内容</li>
+              <li>• {t("publish.tipPhotos")}</li>
+              <li>• {t("publish.tipDetails")}</li>
+              <li>• {t("publish.tipRating")}</li>
+              <li>• {t("publish.tipRules")}</li>
             </ul>
           </Card>
         </div>

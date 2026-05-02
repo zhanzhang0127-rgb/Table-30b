@@ -1,10 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { AlertCircle, Home } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function NotFound() {
   const [, setLocation] = useLocation();
+  const { t } = useLanguage();
 
   const handleGoHome = () => {
     setLocation("/");
@@ -24,13 +26,16 @@ export default function NotFound() {
           <h1 className="text-4xl font-bold text-foreground mb-2">404</h1>
 
           <h2 className="text-xl font-semibold text-foreground mb-4">
-            页面未找到
+            {t("notFound.title")}
           </h2>
 
           <p className="text-foreground/70 mb-8 leading-relaxed">
-            抱歉，您访问的页面不存在或已被移除。
-            <br />
-            让我们带您回到首页吧。
+            {t("notFound.body").split("\n").map((line) => (
+              <span key={line}>
+                {line}
+                <br />
+              </span>
+            ))}
           </p>
 
           <div
@@ -42,7 +47,7 @@ export default function NotFound() {
               className="bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-2.5 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg gap-2"
             >
               <Home className="w-4 h-4" />
-              返回首页
+              {t("notFound.home")}
             </Button>
           </div>
         </CardContent>

@@ -148,6 +148,34 @@ export const appRouter = router({
       }))
       .query(({ input }) => db.getPublishedRestaurants(input.limit, input.offset)),
 
+    getDirectory: protectedProcedure
+      .input(z.object({
+        limit: z.number().default(50),
+        offset: z.number().default(0),
+      }))
+      .query(({ ctx, input }) => {
+        const includeUnpublished = ctx.user.role === 'admin' || ctx.user.role === 'super_admin';
+        return db.getRestaurantDirectory(input.limit, input.offset, includeUnpublished);
+      }),
+
+    getNearby: protectedProcedure
+      .input(z.object({
+        latitude: z.number(),
+        longitude: z.number(),
+        radiusKm: z.number().min(1).max(50).default(5),
+        limit: z.number().min(1).max(50).default(20),
+      }))
+      .query(({ ctx, input }) => {
+        const includeUnpublished = ctx.user.role === 'admin' || ctx.user.role === 'super_admin';
+        return db.getNearbyRestaurants(
+          input.latitude,
+          input.longitude,
+          input.radiusKm,
+          input.limit,
+          includeUnpublished
+        );
+      }),
+
     // 逆地理编码：坐标 → 中文地址（后端代理，Key 不暴露给前端）
     reverseGeocode: protectedProcedure
       .input(z.object({
@@ -173,17 +201,16 @@ export const appRouter = router({
     // 用户提交餐厅（默认 pending 待审核）
     submit: protectedProcedure
       .input(z.object({
-        name: z.string().min(1, '请输入餐厅名称'),
-        description: z.string().optional(),
-        cuisine: z.string().optional(),
-        address: z.string().optional(),
+        name: z.string().trim().min(1, '请输入餐厅名称'),
+        address: z.string().trim().min(1, '请输入餐厅地址'),
+        priceLevel: z.string().trim().min(1, '请输入人均消费'),
+        description: z.string().trim().min(1, '请输入餐厅描述'),
+        rating: z.number().min(1).max(5),
         city: z.string().optional(),
         district: z.string().optional(),
-        latitude: z.string().optional(),
-        longitude: z.string().optional(),
-        phone: z.string().optional(),
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
         image: z.string().optional(),
-        priceLevel: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         let imageUrl = input.image;
@@ -198,8 +225,17 @@ export const appRouter = router({
           }
         }
         return db.createRestaurantAdmin({
-          ...input,
+          name: input.name,
+          address: input.address,
+          priceLevel: input.priceLevel,
+          description: input.description,
           image: imageUrl,
+          city: input.city,
+          district: input.district,
+          latitude: input.latitude === undefined ? undefined : String(input.latitude),
+          longitude: input.longitude === undefined ? undefined : String(input.longitude),
+          averageRating: input.rating.toFixed(1),
+          totalRatings: 1,
           status: 'pending',
           submittedBy: ctx.user.id,
         });

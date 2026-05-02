@@ -1,163 +1,176 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { PostImageGrid } from "@/components/PostImageGrid";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Heart, MessageCircle, Loader2, Trash2, X, ZoomIn, ArrowLeft } from "lucide-react";
-import { useLocation } from "wouter";
+import { Textarea } from "@/components/ui/textarea";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { hasMissingPostImages, parsePostImages } from "@/lib/postImages";
+import { trpc } from "@/lib/trpc";
+import {
+  ArrowLeft,
+  Heart,
+  ImageOff,
+  Loader2,
+  MessageCircle,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { zhCN } from "date-fns/locale";
+import { enUS, zhCN } from "date-fns/locale";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
+
+const formatRelativeTime = (value: unknown, language: "zh" | "en", fallback: string) => {
+  if (!value) return fallback;
+  return formatDistanceToNow(new Date(value as string), {
+    addSuffix: true,
+    locale: language === "zh" ? zhCN : enUS,
+  });
+};
 
 export default function PostDetail() {
   const { user, loading, isAuthenticated } = useAuth();
+  const { language, t } = useLanguage();
   const [, navigate] = useLocation();
   const [postId, setPostId] = useState<number | null>(null);
   const [commentText, setCommentText] = useState("");
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
 
-  // Extract postId from URL
   useEffect(() => {
-    const path = window.location.pathname;
-    const match = path.match(/\/post\/(\d+)/);
+    const match = window.location.pathname.match(/\/post\/(\d+)/);
     if (match) {
       setPostId(parseInt(match[1], 10));
     }
   }, []);
 
-  // Redirect to home if not authenticated
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       navigate("/");
     }
   }, [isAuthenticated, loading, navigate]);
 
-  // Fetch post data
-  const { data: post, isLoading: isLoadingPost, refetch: refetchPost } = trpc.posts.getById.useQuery(
-    postId || 0,
-    { enabled: postId !== null && isAuthenticated }
-  );
+  const {
+    data: post,
+    isLoading: isLoadingPost,
+    refetch: refetchPost,
+  } = trpc.posts.getById.useQuery(postId || 0, {
+    enabled: postId !== null && isAuthenticated,
+  });
 
-  // Fetch comments
-  const { data: comments, isLoading: isLoadingComments, refetch: refetchComments } = trpc.comments.getByPostId.useQuery(
+  const {
+    data: comments,
+    isLoading: isLoadingComments,
+    refetch: refetchComments,
+  } = trpc.comments.getByPostId.useQuery(
     { postId: postId || 0, limit: 50, offset: 0 },
     { enabled: postId !== null && isAuthenticated }
   );
 
-  // Fetch user's liked posts from backend (persistent)
   const { data: myLikedPosts } = trpc.likes.getMyLikedPosts.useQuery(
     undefined,
     { enabled: isAuthenticated }
   );
-
-  // Fetch user's liked comments from backend (persistent)
   const { data: myLikedComments } = trpc.likes.getMyLikedComments.useQuery(
     undefined,
     { enabled: isAuthenticated }
   );
 
-  const likedPostsSet = new Set(myLikedPosts as number[] || []);
-  const likedCommentsSet = new Set(myLikedComments as number[] || []);
+  const likedPostsSet = new Set((myLikedPosts as number[]) || []);
+  const likedCommentsSet = new Set((myLikedComments as number[]) || []);
+  const utils = trpc.useUtils();
 
-  // Create comment mutation
   const createCommentMutation = trpc.comments.create.useMutation({
     onSuccess: () => {
       setCommentText("");
-      toast.success("评论成功！");
+      toast.success(t("postDetail.toastCommentSuccess"));
       refetchComments();
       refetchPost();
     },
     onError: (error) => {
-      toast.error("评论失败：" + error.message);
+      toast.error(t("postDetail.toastCommentFailed", { message: error.message }));
     },
   });
 
-  const utils = trpc.useUtils();
-
-  // Like post mutation
   const likePostMutation = trpc.likes.likePost.useMutation({
     onSuccess: () => {
       utils.likes.getMyLikedPosts.invalidate();
       refetchPost();
     },
     onError: (error) => {
-      toast.error("点赞失败：" + error.message);
+      toast.error(t("feed.toastLikeFailed", { message: error.message }));
     },
   });
 
-  // Unlike post mutation
   const unlikePostMutation = trpc.likes.unlikePost.useMutation({
     onSuccess: () => {
       utils.likes.getMyLikedPosts.invalidate();
       refetchPost();
     },
     onError: (error) => {
-      toast.error("取消点赞失败：" + error.message);
+      toast.error(t("feed.toastUnlikeFailed", { message: error.message }));
     },
   });
 
-  // Like comment mutation
   const likeCommentMutation = trpc.comments.like.useMutation({
     onSuccess: () => {
       utils.likes.getMyLikedComments.invalidate();
       refetchComments();
     },
     onError: (error) => {
-      toast.error("点赞失败：" + error.message);
+      toast.error(t("feed.toastLikeFailed", { message: error.message }));
     },
   });
 
-  // Unlike comment mutation
   const unlikeCommentMutation = trpc.comments.unlike.useMutation({
     onSuccess: () => {
       utils.likes.getMyLikedComments.invalidate();
       refetchComments();
     },
     onError: (error) => {
-      toast.error("取消点赞失败：" + error.message);
+      toast.error(t("feed.toastUnlikeFailed", { message: error.message }));
     },
   });
 
-  // Delete comment mutation
   const deleteCommentMutation = trpc.comments.delete.useMutation({
     onSuccess: () => {
-      toast.success("评论已删除");
+      toast.success(t("postDetail.toastDeletedComment"));
       refetchComments();
       refetchPost();
     },
     onError: (error: any) => {
       if (error.code === "FORBIDDEN") {
-        toast.error("您没有权限删除这条评论");
+        toast.error(t("postDetail.toastNoDeleteComment"));
       } else if (error.code === "NOT_FOUND") {
-        toast.error("评论不存在");
+        toast.error(t("feed.toastNotFound"));
       } else {
-        toast.error("删除失败：" + error.message);
+        toast.error(t("feed.toastDeleteFailed", { message: error.message }));
       }
     },
   });
 
-  // Delete post mutation
   const deletePostMutation = trpc.posts.delete.useMutation({
     onSuccess: () => {
-      toast.success("帖子已删除");
+      toast.success(t("feed.toastDeleted"));
       navigate("/feed");
     },
     onError: (error: any) => {
       if (error.code === "FORBIDDEN") {
-        toast.error("您没有权限删除这个帖子");
+        toast.error(t("feed.toastNoDeletePermission"));
       } else if (error.code === "NOT_FOUND") {
-        toast.error("帖子不存在");
+        toast.error(t("feed.toastNotFound"));
       } else {
-        toast.error("删除失败：" + error.message);
+        toast.error(t("feed.toastDeleteFailed", { message: error.message }));
       }
     },
   });
 
   const handleSubmitComment = async () => {
     if (!commentText.trim() || !postId) {
-      toast.error("请输入评论内容");
+      toast.error(t("postDetail.toastCommentRequired"));
       return;
     }
 
@@ -165,7 +178,7 @@ export default function PostDetail() {
     try {
       await createCommentMutation.mutateAsync({
         postId,
-        content: commentText,
+        content: commentText.trim(),
       });
     } finally {
       setIsSubmittingComment(false);
@@ -173,7 +186,10 @@ export default function PostDetail() {
   };
 
   const handleLikePost = () => {
-    if (!postId || likePostMutation.isPending || unlikePostMutation.isPending) return;
+    if (!postId || likePostMutation.isPending || unlikePostMutation.isPending) {
+      return;
+    }
+
     if (likedPostsSet.has(postId)) {
       unlikePostMutation.mutate(postId);
     } else {
@@ -182,7 +198,10 @@ export default function PostDetail() {
   };
 
   const handleLikeComment = (commentId: number) => {
-    if (likeCommentMutation.isPending || unlikeCommentMutation.isPending) return;
+    if (likeCommentMutation.isPending || unlikeCommentMutation.isPending) {
+      return;
+    }
+
     if (likedCommentsSet.has(commentId)) {
       unlikeCommentMutation.mutate(commentId);
     } else {
@@ -191,31 +210,21 @@ export default function PostDetail() {
   };
 
   const handleDeleteComment = (commentId: number) => {
-    if (confirm("确定要删除这条评论吗？")) {
+    if (confirm(t("postDetail.confirmDeleteComment"))) {
       deleteCommentMutation.mutate(commentId);
     }
   };
 
   const handleDeletePost = () => {
-    if (confirm("确定要删除这个帖子吗？")) {
-      if (postId) {
-        deletePostMutation.mutate(postId);
-      }
+    if (confirm(t("postDetail.confirmDeletePost")) && postId) {
+      deletePostMutation.mutate(postId);
     }
   };
 
-  if (loading || !isAuthenticated || !postId) {
+  if (loading || !isAuthenticated || !postId || isLoadingPost) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
-      </div>
-    );
-  }
-
-  if (isLoadingPost) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-accent border-t-transparent" />
       </div>
     );
   }
@@ -224,270 +233,296 @@ export default function PostDetail() {
     return (
       <div className="min-h-screen bg-background">
         <main className="container py-8">
-          <div className="max-w-2xl mx-auto">
-            <Card className="p-12 text-center">
-              <p className="text-foreground/70 mb-4">帖子不存在</p>
-              <Button 
-                onClick={() => navigate("/feed")}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                返回首页
-              </Button>
-            </Card>
+          <div className="mx-auto max-w-2xl rounded-lg border bg-card p-12 text-center shadow-sm">
+            <p className="mb-4 text-muted-foreground">{t("postDetail.notFound")}</p>
+            <Button onClick={() => navigate("/feed")}>{t("postDetail.back")}</Button>
           </div>
         </main>
       </div>
     );
   }
 
+  const images = parsePostImages(post.images);
+  const hasMissingImages = hasMissingPostImages(post.images);
+  const isPostLiked = likedPostsSet.has(postId);
+  const commentItems = (comments as any[]) || [];
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Main Content */}
-      <main className="container py-6">
-        <div className="max-w-2xl mx-auto space-y-6">
-          {/* Back Button */}
-          <button
+      <main className="container py-5 sm:py-8">
+        <div className="mx-auto max-w-6xl">
+          <Button
+            variant="ghost"
+            className="mb-4 px-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
             onClick={() => navigate("/feed")}
-            className="flex items-center gap-2 text-foreground/60 hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm font-medium">返回社区</span>
-          </button>
-          {/* Post Card */}
-          <Card className="overflow-hidden">
-            {/* Post Header */}
-            <div className="p-6 border-b border-border">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                    <span className="text-sm font-bold text-primary">
-                      {post.userName?.charAt(0) || "U"}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground">{post.userName || "用户"}</p>
-                    <p className="text-sm text-foreground/60">
-                      {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { 
-                        addSuffix: true,
-                        locale: zhCN 
-                      }) : "刚刚"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {post.rating && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-lg font-bold text-secondary">★</span>
-                      <span className="font-semibold text-foreground">{post.rating}</span>
-                    </div>
-                  )}
-                  {user?.id === post.userId && (
-                    <button
-                      onClick={handleDeletePost}
-                      disabled={deletePostMutation.isPending}
-                      className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"
-                      title="删除帖子"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
+            <ArrowLeft className="h-4 w-4" />
+            {t("postDetail.back")}
+          </Button>
 
-              {/* Post Title */}
-              <h1 className="text-2xl font-bold text-foreground mb-2">{post.title}</h1>
-              <p className="text-foreground/70">{post.content}</p>
-            </div>
-
-            {/* Post Images */}
-            {post.images && (() => {
-              const imageList: string[] = typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images;
-              if (!imageList || imageList.length === 0) return null;
-              return (
-                <div className="bg-muted/30 p-4">
-                  <div className={`grid gap-2 ${imageList.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                    {imageList.map((img: string, idx: number) => (
-                      <div 
-                        key={idx} 
-                        className="relative group cursor-pointer overflow-hidden rounded-lg"
-                        onClick={() => setEnlargedImage(img)}
-                      >
-                        <img 
-                          src={img} 
-                          alt={`帖子图片 ${idx + 1}`}
-                          className={`w-full object-cover rounded-lg transition-transform duration-200 group-hover:scale-105 ${imageList.length === 1 ? 'max-h-96' : 'h-48'}`}
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-all flex items-center justify-center">
-                          <div className="bg-black/50 rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <ZoomIn className="w-5 h-5 text-white" />
-                          </div>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+            <section className="min-w-0">
+              <Card className="gap-0 overflow-hidden rounded-lg py-0 shadow-sm">
+                <article>
+                  <div className="border-b p-5 sm:p-6">
+                    <div className="mb-5 flex items-start justify-between gap-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-base font-semibold text-primary">
+                          {post.userName?.charAt(0) || "U"}
                         </div>
-                        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                          点击放大
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold">
+                            {post.userName || t("common.user")}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatRelativeTime(post.createdAt, language, t("common.justNow"))}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
 
-            {/* Image Lightbox - Full Screen */}
-            {enlargedImage && (
-              <div 
-                className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center"
-                onClick={() => setEnlargedImage(null)}
-              >
-                {/* Close button */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); setEnlargedImage(null); }}
-                  className="absolute top-4 right-4 z-[101] bg-white/20 hover:bg-white/40 text-white rounded-full p-3 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-                {/* Hint text */}
-                <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/60 text-sm z-[101]">点击任意位置关闭</p>
-                {/* Image container */}
-                <div 
-                  className="w-full h-full flex items-center justify-center p-4 sm:p-8"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <img 
-                    src={enlargedImage} 
-                    alt="放大图片" 
-                    className="max-w-full max-h-full object-contain select-none"
-                    onClick={() => setEnlargedImage(null)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Post Actions */}
-            <div className="p-6 flex items-center justify-between border-t border-border">
-              <div className="flex items-center gap-6 text-foreground/60">
-                <button 
-                  onClick={handleLikePost}
-                  disabled={likePostMutation.isPending || unlikePostMutation.isPending}
-                  className={`flex items-center gap-2 transition-colors group ${
-                    likedPostsSet.has(postId!) ? "text-secondary" : "hover:text-primary"
-                  }`}
-                  title="点赞"
-                >
-                  <Heart 
-                    className="w-5 h-5 group-hover:fill-current" 
-                    fill={likedPostsSet.has(postId!) ? "currentColor" : "none"}
-                  />
-                  <span className="text-sm">{post.likes || 0}</span>
-                </button>
-                <button 
-                  onClick={() => {
-                    const element = document.getElementById("comments-section");
-                    element?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                  className="flex items-center gap-2 hover:text-primary transition-colors"
-                  title="查看评论"
-                >
-                  <MessageCircle className="w-5 h-5" />
-                  <span className="text-sm">{post.comments || 0}</span>
-                </button>
-              </div>
-            </div>
-          </Card>
-
-          {/* Comment Section */}
-          <Card className="p-6" id="comments-section">
-            <h2 className="text-lg font-bold text-foreground mb-4">评论</h2>
-
-            {/* Comment Input */}
-            <div className="mb-6 pb-6 border-b border-border">
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-bold text-primary">
-                    {user?.name?.charAt(0) || "U"}
-                  </span>
-                </div>
-                <div className="flex-1">
-                  <Input
-                    placeholder="写下你的评论..."
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    className="bg-muted/50 border-border mb-2"
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      size="sm"
-                      onClick={handleSubmitComment}
-                      disabled={isSubmittingComment || !commentText.trim()}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
-                    >
-                      {isSubmittingComment && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {isSubmittingComment ? "发布中..." : "发布"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Comments List */}
-            {isLoadingComments ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-transparent"></div>
-              </div>
-            ) : comments && comments.length > 0 ? (
-              <div className="space-y-4">
-                {comments.map((comment: any) => (
-                  <div key={comment.id} className="flex gap-3 pb-4 border-b border-border last:border-b-0">
-                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-primary">
-                        {comment.userName?.charAt(0) || "U"}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {post.rating && (
+                          <Badge variant="secondary">{t("common.rating")} {post.rating}</Badge>
+                        )}
+                        {user?.id === post.userId && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title={t("feed.deleteTitle")}
+                            disabled={deletePostMutation.isPending}
+                            onClick={handleDeletePost}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-foreground text-sm">{comment.userName || "用户"}</p>
-                        <p className="text-xs text-foreground/60">
-                          {comment.createdAt ? formatDistanceToNow(new Date(comment.createdAt), { 
-                            addSuffix: true,
-                            locale: zhCN 
-                          }) : "刚刚"}
+
+                    <h1 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
+                      {post.title}
+                    </h1>
+                    {post.content && (
+                      <p className="mt-4 whitespace-pre-wrap text-base leading-7 text-muted-foreground">
+                        {post.content}
+                      </p>
+                    )}
+                  </div>
+
+                  {images.length > 0 && (
+                    <div className="p-4 sm:p-6">
+                      <PostImageGrid
+                        images={images}
+                        variant="detail"
+                        onOpenImage={setEnlargedImage}
+                      />
+                    </div>
+                  )}
+
+                  {images.length === 0 && hasMissingImages && (
+                    <div className="m-5 flex items-start gap-3 rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground sm:m-6">
+                      <ImageOff className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {t("postDetail.badImagesTitle")}
+                        </p>
+                        <p className="mt-1">
+                          {t("postDetail.badImagesBody")}
                         </p>
                       </div>
-                      <p className="text-foreground/70 text-sm mb-2">{comment.content}</p>
-                      
-                      {/* Comment Actions */}
-                      <div className="flex items-center gap-4 text-xs text-foreground/60">
-                        <button 
-                          onClick={() => handleLikeComment(comment.id)}
-                          disabled={likeCommentMutation.isPending || unlikeCommentMutation.isPending}
-                          className={`flex items-center gap-1 transition-colors ${
-                            likedCommentsSet.has(comment.id) ? "text-secondary" : "hover:text-primary"
-                          }`}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 border-t px-5 py-4 sm:px-6">
+                    <Button
+                      variant="ghost"
+                      className={
+                        isPostLiked
+                          ? "text-destructive hover:text-destructive"
+                          : "text-muted-foreground"
+                      }
+                      disabled={
+                        likePostMutation.isPending ||
+                        unlikePostMutation.isPending
+                      }
+                      onClick={handleLikePost}
+                    >
+                      <Heart
+                        className="h-4 w-4"
+                        fill={isPostLiked ? "currentColor" : "none"}
+                      />
+                      {post.likes || 0}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      onClick={() =>
+                        document
+                          .getElementById("comments-section")
+                          ?.scrollIntoView({ behavior: "smooth" })
+                      }
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      {post.comments || 0}
+                    </Button>
+                  </div>
+                </article>
+              </Card>
+            </section>
+
+            <aside id="comments-section" className="min-w-0">
+              <Card className="gap-0 rounded-lg py-0 shadow-sm lg:sticky lg:top-20">
+                <div className="border-b p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold">{t("postDetail.comments")}</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {commentItems.length > 0
+                          ? t("postDetail.discussions", { count: commentItems.length })
+                          : t("postDetail.noComments")}
+                      </p>
+                    </div>
+                    <Badge variant="outline">{post.comments || 0}</Badge>
+                  </div>
+                </div>
+
+                <div className="border-b p-5">
+                  <div className="flex gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-sm font-semibold text-primary">
+                      {user?.name?.charAt(0) || "U"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <Textarea
+                        placeholder={t("postDetail.placeholder")}
+                        value={commentText}
+                        onChange={(event) => setCommentText(event.target.value)}
+                        rows={3}
+                      />
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          size="sm"
+                          onClick={handleSubmitComment}
+                          disabled={isSubmittingComment || !commentText.trim()}
                         >
-                          <Heart 
-                            className="w-4 h-4" 
-                            fill={likedCommentsSet.has(comment.id) ? "currentColor" : "none"}
-                          />
-                          <span>{comment.likes || 0}</span>
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteComment(comment.id)}
-                          disabled={deleteCommentMutation.isPending}
-                          className="flex items-center gap-1 hover:text-destructive transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span>删除</span>
-                        </button>
+                          {isSubmittingComment ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                          {t("postDetail.publish")}
+                        </Button>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-center text-foreground/60 py-8">暂无评论，成为第一个评论者吧！</p>
-            )}
-          </Card>
+                </div>
+
+                <div className="max-h-[720px] overflow-y-auto p-5">
+                  {isLoadingComments ? (
+                    <div className="flex justify-center py-10">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-accent border-t-transparent" />
+                    </div>
+                  ) : commentItems.length > 0 ? (
+                    <div className="space-y-5">
+                      {commentItems.map((comment) => {
+                        const isCommentLiked = likedCommentsSet.has(comment.id);
+                        return (
+                          <div key={comment.id} className="flex gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold">
+                              {comment.userName?.charAt(0) || "U"}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1 flex items-center gap-2">
+                                  <p className="truncate text-sm font-semibold">
+                                  {comment.userName || t("common.user")}
+                                </p>
+                                <span className="text-xs text-muted-foreground">
+                                  {formatRelativeTime(comment.createdAt, language, t("common.justNow"))}
+                                </span>
+                              </div>
+                              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                                {comment.content}
+                              </p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={
+                                    isCommentLiked
+                                      ? "h-7 px-2 text-destructive hover:text-destructive"
+                                      : "h-7 px-2 text-muted-foreground"
+                                  }
+                                  disabled={
+                                    likeCommentMutation.isPending ||
+                                    unlikeCommentMutation.isPending
+                                  }
+                                  onClick={() => handleLikeComment(comment.id)}
+                                >
+                                  <Heart
+                                    className="h-3.5 w-3.5"
+                                    fill={
+                                      isCommentLiked ? "currentColor" : "none"
+                                    }
+                                  />
+                                  {comment.likes || 0}
+                                </Button>
+                                {user?.id === comment.userId && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-muted-foreground"
+                                    disabled={deleteCommentMutation.isPending}
+                                    onClick={() =>
+                                      handleDeleteComment(comment.id)
+                                    }
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    {t("common.delete")}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center">
+                      <MessageCircle className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        {t("postDetail.emptyComments")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </aside>
+          </div>
         </div>
       </main>
+
+      {enlargedImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setEnlargedImage(null)}
+        >
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            className="absolute right-4 top-4 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            onClick={(event) => {
+              event.stopPropagation();
+              setEnlargedImage(null);
+            }}
+          >
+            <X className="h-6 w-6" />
+          </Button>
+          <img
+            src={enlargedImage}
+            alt={t("postDetail.enlargedAlt")}
+            className="max-h-full max-w-full rounded-lg object-contain"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

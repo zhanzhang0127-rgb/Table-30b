@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useLanguage } from "@/contexts/LanguageContext";
 import {
   Dialog,
   DialogContent,
@@ -51,12 +53,13 @@ import {
 type AdminTab = "overview" | "restaurants" | "users" | "admins";
 
 function PromoteUserForm({ onPromote, isPending }: { onPromote: (userId: number) => void; isPending: boolean }) {
+  const { t } = useLanguage();
   const [inputId, setInputId] = useState("");
   return (
     <div className="flex gap-2">
       <Input
         type="number"
-        placeholder="输入用户 ID"
+        placeholder={t("admin.userIdPlaceholder")}
         value={inputId}
         onChange={(e) => setInputId(e.target.value)}
         className="max-w-xs"
@@ -70,17 +73,32 @@ function PromoteUserForm({ onPromote, isPending }: { onPromote: (userId: number)
         }}
         disabled={isPending || !inputId}
       >
-        {isPending ? "设置中..." : "设为管理员"}
+        {isPending ? t("admin.setting") : t("admin.setAdmin")}
       </Button>
     </div>
   );
 }
 
-const CUISINE_OPTIONS = ["中餐", "西餐", "日料", "韩餐", "快餐", "小吃", "甜品", "饮品", "其他"];
-const PRICE_OPTIONS = ["¥ 便宜（人均 < 30）", "¥¥ 中等（人均 30-80）", "¥¥¥ 较贵（人均 > 80）"];
+const CUISINE_OPTIONS = [
+  { value: "中餐", labelKey: "admin.cuisineChinese" },
+  { value: "西餐", labelKey: "admin.cuisineWestern" },
+  { value: "日料", labelKey: "admin.cuisineJapanese" },
+  { value: "韩餐", labelKey: "admin.cuisineKorean" },
+  { value: "快餐", labelKey: "admin.cuisineFastFood" },
+  { value: "小吃", labelKey: "admin.cuisineSnacks" },
+  { value: "甜品", labelKey: "admin.cuisineDessert" },
+  { value: "饮品", labelKey: "admin.cuisineDrinks" },
+  { value: "其他", labelKey: "admin.cuisineOther" },
+];
+const PRICE_OPTIONS = [
+  { value: "¥ 便宜（人均 < 30）", labelKey: "admin.priceCheap" },
+  { value: "¥¥ 中等（人均 30-80）", labelKey: "admin.priceMedium" },
+  { value: "¥¥¥ 较贵（人均 > 80）", labelKey: "admin.priceExpensive" },
+];
 
 export default function Admin() {
   const { user, loading, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,7 +131,7 @@ export default function Admin() {
       if (!isAuthenticated) {
         navigate("/");
       } else if (!isAdminOrAbove) {
-        toast.error("无权访问管理员后台");
+        toast.error(t("admin.toastForbidden"));
         navigate("/feed");
       }
     }
@@ -141,51 +159,51 @@ export default function Admin() {
 
   const setRoleMutation = trpc.admin.setUserRole.useMutation({
     onSuccess: () => {
-      toast.success("权限已更新");
+      toast.success(t("admin.toastRoleUpdated"));
       utils.admin.getAdmins.invalidate();
       utils.admin.getUsers.invalidate();
     },
-    onError: (e) => toast.error("更新失败：" + e.message),
+    onError: (e) => toast.error(t("admin.toastUpdateFailed", { message: e.message })),
   });
 
   const createMutation = trpc.admin.createRestaurant.useMutation({
     onSuccess: () => {
-      toast.success("餐厅添加成功");
+      toast.success(t("admin.toastRestaurantAdded"));
       setShowAddDialog(false);
       resetForm();
       utils.admin.getRestaurants.invalidate();
       utils.admin.getStats.invalidate();
     },
-    onError: (e) => toast.error("添加失败：" + e.message),
+    onError: (e) => toast.error(t("admin.toastAddFailed", { message: e.message })),
   });
 
   const updateMutation = trpc.admin.updateRestaurant.useMutation({
     onSuccess: () => {
-      toast.success("餐厅更新成功");
+      toast.success(t("admin.toastRestaurantUpdated"));
       setEditingRestaurant(null);
       resetForm();
       utils.admin.getRestaurants.invalidate();
     },
-    onError: (e) => toast.error("更新失败：" + e.message),
+    onError: (e) => toast.error(t("admin.toastUpdateFailed", { message: e.message })),
   });
 
   const deleteMutation = trpc.admin.deleteRestaurant.useMutation({
     onSuccess: () => {
-      toast.success("餐厅已删除");
+      toast.success(t("admin.toastRestaurantDeleted"));
       setDeletingId(null);
       utils.admin.getRestaurants.invalidate();
       utils.admin.getStats.invalidate();
     },
-    onError: (e) => toast.error("删除失败：" + e.message),
+    onError: (e) => toast.error(t("admin.toastDeleteFailed", { message: e.message })),
   });
 
   const statusMutation = trpc.admin.updateRestaurantStatus.useMutation({
     onSuccess: () => {
-      toast.success("状态已更新");
+      toast.success(t("admin.toastStatusUpdated"));
       utils.admin.getRestaurants.invalidate();
       utils.admin.getStats.invalidate();
     },
-    onError: (e) => toast.error("更新失败：" + e.message),
+    onError: (e) => toast.error(t("admin.toastUpdateFailed", { message: e.message })),
   });
 
   const resetForm = () => {
@@ -214,7 +232,7 @@ export default function Admin() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("图片不能超过 5MB");
+      toast.error(t("admin.toastImageTooLarge"));
       return;
     }
     const reader = new FileReader();
@@ -228,7 +246,7 @@ export default function Admin() {
 
   const handleSubmit = () => {
     if (!form.name.trim()) {
-      toast.error("请输入餐厅名称");
+      toast.error(t("admin.toastNameRequired"));
       return;
     }
     if (editingRestaurant) {
@@ -244,9 +262,9 @@ export default function Admin() {
   );
 
   const statusLabel = (status: string) => {
-    if (status === "published") return <Badge className="bg-green-100 text-green-700 border-green-200">已发布</Badge>;
-    if (status === "pending") return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">待审核</Badge>;
-    return <Badge className="bg-red-100 text-red-700 border-red-200">已拒绝</Badge>;
+    if (status === "published") return <Badge className="bg-green-100 text-green-700 border-green-200">{t("admin.published")}</Badge>;
+    if (status === "pending") return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">{t("admin.pending")}</Badge>;
+    return <Badge className="bg-red-100 text-red-700 border-red-200">{t("admin.rejected")}</Badge>;
   };
 
   if (loading || !isAuthenticated || !isAdminOrAbove) {
@@ -264,20 +282,20 @@ export default function Admin() {
         <div className="p-5 border-b border-border">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xl font-bold text-primary">吃了吗</span>
-            <Badge variant="outline" className="text-xs">管理后台</Badge>
+            <Badge variant="outline" className="text-xs">{t("admin.title")}</Badge>
           </div>
           <p className="text-xs text-foreground/50">
-            Hi，{user?.name || "管理员"}
-            {isSuperAdmin && <span className="ml-1 text-primary font-semibold">★ 总管</span>}
+            {t("admin.greeting", { name: user?.name || t("admin.adminFallback") })}
+            {isSuperAdmin && <span className="ml-1 text-primary font-semibold">★ {t("admin.superAdmin")}</span>}
           </p>
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
           {[
-            { id: "overview", label: "数据概览", icon: LayoutDashboard, show: true },
-            { id: "restaurants", label: "餐厅管理", icon: UtensilsCrossed, show: true },
-            { id: "users", label: "用户列表", icon: Users, show: isSuperAdmin },
-            { id: "admins", label: "管理员管理", icon: ShieldCheck, show: isSuperAdmin },
+            { id: "overview", label: t("admin.overview"), icon: LayoutDashboard, show: true },
+            { id: "restaurants", label: t("admin.restaurantManagement"), icon: UtensilsCrossed, show: true },
+            { id: "users", label: t("admin.userList"), icon: Users, show: isSuperAdmin },
+            { id: "admins", label: t("admin.adminManagement"), icon: ShieldCheck, show: isSuperAdmin },
           ].filter(item => item.show).map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -300,23 +318,27 @@ export default function Admin() {
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-foreground/60 hover:bg-muted hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            返回社区
+            {t("admin.backCommunity")}
           </button>
         </div>
       </aside>
 
       {/* Main content */}
       <main className="ml-56 flex-1 p-8">
+        <div className="fixed right-6 top-4 z-20">
+          <LanguageSwitcher />
+        </div>
+
         {/* Overview Tab */}
         {activeTab === "overview" && (
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-6">数据概览</h1>
+            <h1 className="text-2xl font-bold text-foreground mb-6">{t("admin.overview")}</h1>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               {[
-                { label: "注册用户", value: stats?.totalUsers ?? "—", icon: Users, color: "text-blue-500" },
-                { label: "帖子总数", value: stats?.totalPosts ?? "—", icon: FileText, color: "text-green-500" },
-                { label: "餐厅总数", value: stats?.totalRestaurants ?? "—", icon: Store, color: "text-primary" },
-                { label: "待审核", value: stats?.pendingRestaurants ?? "—", icon: Clock, color: "text-yellow-500" },
+                { label: t("admin.totalUsers"), value: stats?.totalUsers ?? "—", icon: Users, color: "text-blue-500" },
+                { label: t("admin.totalPosts"), value: stats?.totalPosts ?? "—", icon: FileText, color: "text-green-500" },
+                { label: t("admin.totalRestaurants"), value: stats?.totalRestaurants ?? "—", icon: Store, color: "text-primary" },
+                { label: t("admin.pendingReview"), value: stats?.pendingRestaurants ?? "—", icon: Clock, color: "text-yellow-500" },
               ].map(({ label, value, icon: Icon, color }) => (
                 <Card key={label} className="p-5">
                   <div className="flex items-center justify-between mb-2">
@@ -329,22 +351,22 @@ export default function Admin() {
             </div>
 
             <Card className="p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-3">快捷操作</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-3">{t("admin.quickActions")}</h2>
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => { setActiveTab("restaurants"); setShowAddDialog(true); }} className="gap-2">
-                  <Plus className="w-4 h-4" /> 添加餐厅
+                  <Plus className="w-4 h-4" /> {t("admin.addRestaurant")}
                 </Button>
                 <Button variant="outline" onClick={() => setActiveTab("restaurants")} className="gap-2">
-                  <UtensilsCrossed className="w-4 h-4" /> 管理餐厅
+                  <UtensilsCrossed className="w-4 h-4" /> {t("admin.manageRestaurants")}
                 </Button>
                 {isSuperAdmin && (
                 <Button variant="outline" onClick={() => setActiveTab("users")} className="gap-2">
-                  <Users className="w-4 h-4" /> 查看用户
+                  <Users className="w-4 h-4" /> {t("admin.viewUsers")}
                 </Button>
               )}
               {isSuperAdmin && (
                 <Button variant="outline" onClick={() => setActiveTab("admins")} className="gap-2">
-                  <Users className="w-4 h-4" /> 管理员管理
+                  <Users className="w-4 h-4" /> {t("admin.adminManagement")}
                 </Button>
               )}
               </div>
@@ -356,15 +378,15 @@ export default function Admin() {
         {activeTab === "restaurants" && (
           <div>
             <div className="flex items-center justify-between mb-6">
-              <h1 className="text-2xl font-bold text-foreground">餐厅管理</h1>
+              <h1 className="text-2xl font-bold text-foreground">{t("admin.restaurantManagement")}</h1>
               <Button onClick={() => { resetForm(); setShowAddDialog(true); }} className="gap-2">
-                <Plus className="w-4 h-4" /> 添加餐厅
+                <Plus className="w-4 h-4" /> {t("admin.addRestaurant")}
               </Button>
             </div>
 
             <div className="mb-4">
               <Input
-                placeholder="搜索餐厅名称或地址..."
+                placeholder={t("admin.searchRestaurants")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="max-w-sm"
@@ -405,9 +427,9 @@ export default function Admin() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="published">已发布</SelectItem>
-                            <SelectItem value="pending">待审核</SelectItem>
-                            <SelectItem value="rejected">已拒绝</SelectItem>
+                            <SelectItem value="published">{t("admin.published")}</SelectItem>
+                            <SelectItem value="pending">{t("admin.pending")}</SelectItem>
+                            <SelectItem value="rejected">{t("admin.rejected")}</SelectItem>
                           </SelectContent>
                         </Select>
                         <Button size="sm" variant="ghost" onClick={() => openEditDialog(r)}>
@@ -424,8 +446,8 @@ export default function Admin() {
             ) : (
               <Card className="p-16 text-center">
                 <UtensilsCrossed className="w-12 h-12 text-foreground/20 mx-auto mb-4" />
-                <p className="text-foreground/60 mb-4">还没有餐厅数据</p>
-                <Button onClick={() => { resetForm(); setShowAddDialog(true); }}>添加第一家餐厅</Button>
+                <p className="text-foreground/60 mb-4">{t("admin.noRestaurants")}</p>
+                <Button onClick={() => { resetForm(); setShowAddDialog(true); }}>{t("admin.addFirstRestaurant")}</Button>
               </Card>
             )}
           </div>
@@ -434,8 +456,8 @@ export default function Admin() {
         {/* Users Tab - super_admin only */}
         {activeTab === "users" && isSuperAdmin && (
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">用户列表</h1>
-            <p className="text-sm text-foreground/60 mb-6">点击右侧按钮可直接设置或撤销管理员权限。</p>
+            <h1 className="text-2xl font-bold text-foreground mb-2">{t("admin.userList")}</h1>
+            <p className="text-sm text-foreground/60 mb-6">{t("admin.usersHelp")}</p>
             {isLoadingUsers ? (
               <div className="flex justify-center py-16">
                 <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary border-t-transparent" />
@@ -450,9 +472,9 @@ export default function Admin() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground">{u.name || "未设置昵称"}</p>
-                          {u.role === "admin" && <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">管理员</Badge>}
-                          {u.role === "super_admin" && <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 text-xs">总管</Badge>}
+                          <p className="font-medium text-foreground">{u.name || t("admin.nicknameMissing")}</p>
+                          {u.role === "admin" && <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">{t("admin.admin")}</Badge>}
+                          {u.role === "super_admin" && <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 text-xs">{t("admin.superAdmin")}</Badge>}
                         </div>
                         <p className="text-sm text-foreground/60">{u.email}</p>
                       </div>
@@ -465,7 +487,7 @@ export default function Admin() {
                             onClick={() => setRoleMutation.mutate({ userId: u.id, role: "admin" })}
                             disabled={setRoleMutation.isPending}
                           >
-                            设为管理员
+                            {t("admin.setAdmin")}
                           </Button>
                         )}
                         {u.role === "admin" && (
@@ -476,11 +498,11 @@ export default function Admin() {
                             onClick={() => setRoleMutation.mutate({ userId: u.id, role: "user" })}
                             disabled={setRoleMutation.isPending}
                           >
-                            撤销权限
+                            {t("admin.revoke")}
                           </Button>
                         )}
                         {u.role === "super_admin" && (
-                          <span className="text-xs text-foreground/40">总管理员</span>
+                          <span className="text-xs text-foreground/40">{t("admin.superAdminFull")}</span>
                         )}
                       </div>
                     </div>
@@ -489,7 +511,7 @@ export default function Admin() {
               </div>
             ) : (
               <Card className="p-16 text-center">
-                <p className="text-foreground/60">暂无用户数据</p>
+                <p className="text-foreground/60">{t("admin.noUsers")}</p>
               </Card>
             )}
           </div>
@@ -499,27 +521,27 @@ export default function Admin() {
         {activeTab === "admins" && isSuperAdmin && (
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h1 className="text-2xl font-bold text-foreground">管理员管理</h1>
+              <h1 className="text-2xl font-bold text-foreground">{t("admin.adminManagement")}</h1>
               <Badge className="bg-primary/10 text-primary border-primary/20">
-                共 {adminsList ? adminsList.filter((a: any) => a.role === "admin").length : 0} 位管理员
+                {t("admin.adminCount", { count: adminsList ? adminsList.filter((a: any) => a.role === "admin").length : 0 })}
               </Badge>
             </div>
-            <p className="text-sm text-foreground/60 mb-6">设置用户为管理员后，对方可以登录管理后台并审核餐厅。仅您可以设置或撤销管理员权限。</p>
+            <p className="text-sm text-foreground/60 mb-6">{t("admin.adminHelp")}</p>
 
             {/* Add admin */}
             <Card className="p-5 mb-6 border-primary/20 bg-primary/5">
               <div className="flex items-center gap-2 mb-3">
                 <UserPlus className="w-4 h-4 text-primary" />
-                <h2 className="text-base font-semibold text-foreground">添加管理员</h2>
+                <h2 className="text-base font-semibold text-foreground">{t("admin.addAdmin")}</h2>
               </div>
-              <p className="text-sm text-foreground/60 mb-3">输入用户 ID 将其设为管理员（可在用户列表中查看用户 ID）</p>
+              <p className="text-sm text-foreground/60 mb-3">{t("admin.addAdminHelp")}</p>
               <PromoteUserForm onPromote={(userId) => setRoleMutation.mutate({ userId, role: "admin" })} isPending={setRoleMutation.isPending} />
             </Card>
 
             {/* Current admins list */}
             <div className="flex items-center gap-2 mb-3">
               <ShieldCheck className="w-4 h-4 text-primary" />
-              <h2 className="text-base font-semibold text-foreground">当前管理员列表</h2>
+              <h2 className="text-base font-semibold text-foreground">{t("admin.currentAdmins")}</h2>
             </div>
             {isLoadingAdmins ? (
               <div className="flex justify-center py-8">
@@ -535,8 +557,8 @@ export default function Admin() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground">{a.name || "未设置昵称"}</p>
-                          <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">管理员</Badge>
+                          <p className="font-medium text-foreground">{a.name || t("admin.nicknameMissing")}</p>
+                          <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">{t("admin.admin")}</Badge>
                         </div>
                         <p className="text-sm text-foreground/60">{a.email}</p>
                         <p className="text-xs text-foreground/40">ID: {a.id}</p>
@@ -548,7 +570,7 @@ export default function Admin() {
                         onClick={() => setRoleMutation.mutate({ userId: a.id, role: "user" })}
                         disabled={setRoleMutation.isPending}
                       >
-                        撤销权限
+                        {t("admin.revoke")}
                       </Button>
                     </div>
                   </Card>
@@ -557,8 +579,8 @@ export default function Admin() {
             ) : (
               <Card className="p-10 text-center">
                 <ShieldCheck className="w-10 h-10 text-foreground/20 mx-auto mb-3" />
-                <p className="text-foreground/60">暂无其他管理员</p>
-                <p className="text-sm text-foreground/40 mt-1">在上方输入用户 ID 来添加管理员</p>
+                <p className="text-foreground/60">{t("admin.noOtherAdmins")}</p>
+                <p className="text-sm text-foreground/40 mt-1">{t("admin.addAdminEmptyHelp")}</p>
               </Card>
             )}
           </div>
@@ -569,23 +591,23 @@ export default function Admin() {
       <Dialog open={showAddDialog || !!editingRestaurant} onOpenChange={(open) => { if (!open) { setShowAddDialog(false); setEditingRestaurant(null); resetForm(); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingRestaurant ? "编辑餐厅" : "添加餐厅"}</DialogTitle>
+            <DialogTitle>{editingRestaurant ? t("admin.editRestaurant") : t("admin.addRestaurant")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             {/* Image upload */}
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">餐厅图片</label>
+              <label className="block text-sm font-medium text-foreground mb-2">{t("admin.restaurantImage")}</label>
               <div
                 className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {imagePreview ? (
-                  <img src={imagePreview} alt="预览" className="w-full h-32 object-cover rounded-lg" />
+                  <img src={imagePreview} alt={t("admin.previewAlt")} className="w-full h-32 object-cover rounded-lg" />
                 ) : (
                   <div className="py-4">
                     <Image className="w-8 h-8 text-foreground/30 mx-auto mb-2" />
-                    <p className="text-sm text-foreground/50">点击上传图片（最大 5MB）</p>
+                    <p className="text-sm text-foreground/50">{t("admin.uploadImage")}</p>
                   </div>
                 )}
               </div>
@@ -593,74 +615,74 @@ export default function Admin() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">餐厅名称 *</label>
-              <Input placeholder="例：太仓老街面馆" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+              <label className="block text-sm font-medium text-foreground mb-1">{t("admin.restaurantName")}</label>
+              <Input placeholder={t("admin.restaurantNamePlaceholder")} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">菜系</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t("admin.cuisine")}</label>
                 <Select value={form.cuisine} onValueChange={(v) => setForm((f) => ({ ...f, cuisine: v }))}>
-                  <SelectTrigger><SelectValue placeholder="选择菜系" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("admin.chooseCuisine")} /></SelectTrigger>
                   <SelectContent>
-                    {CUISINE_OPTIONS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {CUISINE_OPTIONS.map((c) => <SelectItem key={c.value} value={c.value}>{t(c.labelKey)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">价格区间</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t("admin.priceRange")}</label>
                 <Select value={form.priceLevel} onValueChange={(v) => setForm((f) => ({ ...f, priceLevel: v }))}>
-                  <SelectTrigger><SelectValue placeholder="选择价格" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t("admin.choosePrice")} /></SelectTrigger>
                   <SelectContent>
-                    {PRICE_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                    {PRICE_OPTIONS.map((p) => <SelectItem key={p.value} value={p.value}>{t(p.labelKey)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">地址</label>
-              <Input placeholder="例：太仓市上海东路1800号" value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
+              <label className="block text-sm font-medium text-foreground mb-1">{t("admin.address")}</label>
+              <Input placeholder={t("admin.addressPlaceholder")} value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">城市</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t("admin.city")}</label>
                 <Input placeholder="太仓" value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">区域</label>
-                <Input placeholder="例：学校南门" value={form.district} onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))} />
+                <label className="block text-sm font-medium text-foreground mb-1">{t("admin.district")}</label>
+                <Input placeholder={t("admin.districtPlaceholder")} value={form.district} onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))} />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">电话</label>
-              <Input placeholder="联系电话（选填）" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              <label className="block text-sm font-medium text-foreground mb-1">{t("admin.phone")}</label>
+              <Input placeholder={t("admin.phonePlaceholder")} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">简介</label>
-              <Input placeholder="一句话介绍这家餐厅（选填）" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+              <label className="block text-sm font-medium text-foreground mb-1">{t("admin.description")}</label>
+              <Input placeholder={t("admin.descriptionPlaceholder")} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">状态</label>
+              <label className="block text-sm font-medium text-foreground mb-1">{t("admin.status")}</label>
               <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as any }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="published">已发布</SelectItem>
-                  <SelectItem value="pending">待审核</SelectItem>
-                  <SelectItem value="rejected">已拒绝</SelectItem>
+                  <SelectItem value="published">{t("admin.published")}</SelectItem>
+                  <SelectItem value="pending">{t("admin.pending")}</SelectItem>
+                  <SelectItem value="rejected">{t("admin.rejected")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowAddDialog(false); setEditingRestaurant(null); resetForm(); }}>取消</Button>
+            <Button variant="outline" onClick={() => { setShowAddDialog(false); setEditingRestaurant(null); resetForm(); }}>{t("common.cancel")}</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-              {createMutation.isPending || updateMutation.isPending ? "保存中..." : editingRestaurant ? "保存修改" : "添加餐厅"}
+              {createMutation.isPending || updateMutation.isPending ? t("admin.saving") : editingRestaurant ? t("admin.saveChanges") : t("admin.addRestaurant")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -670,16 +692,16 @@ export default function Admin() {
       <AlertDialog open={!!deletingId} onOpenChange={(open) => { if (!open) setDeletingId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>此操作不可撤销，餐厅数据将被永久删除。</AlertDialogDescription>
+            <AlertDialogTitle>{t("admin.confirmDelete")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("admin.deleteWarning")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => deletingId && deleteMutation.mutate(deletingId)}
             >
-              确认删除
+              {t("admin.confirmDeleteAction")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

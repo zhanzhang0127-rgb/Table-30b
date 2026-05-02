@@ -512,6 +512,18 @@ export async function getPublishedRestaurants(limit: number = 20, offset: number
     .offset(offset);
 }
 
+export async function getRestaurantDirectory(
+  limit: number = 20,
+  offset: number = 0,
+  includeUnpublished: boolean = false
+) {
+  if (includeUnpublished) {
+    return getAllRestaurantsAdmin(limit, offset);
+  }
+
+  return getPublishedRestaurants(limit, offset);
+}
+
 export async function getAdminUsers() {
   const db = await getDb();
   if (!db) return [];
@@ -538,7 +550,13 @@ export async function setUserRole(userId: number, role: 'user' | 'admin' | 'supe
 /**
  * 按经纬度查询附近已发布餐厅（Haversine 公式，单位：公里）
  */
-export async function getNearbyRestaurants(lat: number, lng: number, radiusKm: number = 5, limit: number = 10) {
+export async function getNearbyRestaurants(
+  lat: number,
+  lng: number,
+  radiusKm: number = 5,
+  limit: number = 10,
+  includeUnpublished: boolean = false
+) {
   const db = await getDb();
   if (!db) return [];
   // Haversine 公式（MySQL 内联计算距离）
@@ -552,19 +570,23 @@ export async function getNearbyRestaurants(lat: number, lng: number, radiusKm: n
   const result = await db.select({
     id: restaurants.id,
     name: restaurants.name,
+    description: restaurants.description,
     cuisine: restaurants.cuisine,
     address: restaurants.address,
     city: restaurants.city,
     district: restaurants.district,
+    image: restaurants.image,
     averageRating: restaurants.averageRating,
+    totalRatings: restaurants.totalRatings,
     priceLevel: restaurants.priceLevel,
+    status: restaurants.status,
     latitude: restaurants.latitude,
     longitude: restaurants.longitude,
     distance: distanceExpr,
   })
     .from(restaurants)
     .where(
-      sql`${restaurants.status} = 'published'
+      sql`${includeUnpublished ? sql`1 = 1` : sql`${restaurants.status} = 'published'`}
         AND ${restaurants.latitude} IS NOT NULL
         AND ${restaurants.longitude} IS NOT NULL
         AND (6371 * 2 * ASIN(SQRT(

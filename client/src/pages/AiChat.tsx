@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Send, Loader2, Bot, User, Sparkles, MapPin, MapPinOff } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState, useRef } from "react";
@@ -21,21 +22,22 @@ interface UserLocation {
   address?: string;
 }
 
-const QUICK_PROMPTS = [
-  "根据我的口味推荐几家餐厅",
-  "附近有什么好吃的？",
-  "平台上最近有什么热门美食？",
-  "帮我推荐适合约会的餐厅",
+const QUICK_PROMPT_KEYS = [
+  "ai.promptTaste",
+  "ai.promptNearby",
+  "ai.promptHot",
+  "ai.promptDate",
 ];
 
 export default function AiChat() {
   const { isAuthenticated, loading } = useAuth();
+  const { language, t } = useLanguage();
   const [, navigate] = useLocation();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
-      content: `你好！👋 我是吃了吗 AI 助手，由 GLM-4 驱动。\n\n我已经了解了你在平台上的收藏和点赞记录，可以为你提供个性化的美食推荐。\n\n点击下方「📍 获取我的位置」按钮，我还能为你推荐附近的餐厅！`,
+      content: t("ai.welcome"),
       timestamp: new Date(),
     },
   ]);
@@ -67,7 +69,7 @@ export default function AiChat() {
       const errorMessage: Message = {
         id: Date.now().toString(),
         role: "assistant",
-        content: `抱歉，AI 助手暂时无法响应，请稍后再试。（${error.message}）`,
+        content: t("ai.error", { message: error.message }),
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -84,9 +86,16 @@ export default function AiChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    setMessages((current) => {
+      if (current.length !== 1 || current[0]?.id !== "welcome") return current;
+      return [{ ...current[0], content: t("ai.welcome") }];
+    });
+  }, [t]);
+
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
-      toast.error("你的浏览器不支持定位功能");
+      toast.error(t("ai.toastNoGeo"));
       return;
     }
     setLocationLoading(true);
@@ -99,24 +108,30 @@ export default function AiChat() {
           const result = await reverseGeocode.mutateAsync({ latitude: lat, longitude: lng });
           address = result.address;
         } catch {
-          // 高德解析失败也没关系，坐标还是有效的
+          // 高德解析失败也没关系，定位仍然有效。
         }
         setUserLocation({ latitude: lat, longitude: lng, address });
         setLocationLoading(false);
         // 自动发一条提示消息
-        const locMsg = address ? `已获取你的位置：${address}` : `已获取你的位置（经纬度 ${lat.toFixed(4)}, ${lng.toFixed(4)}）`;
+        const locMsg = address
+          ? t("ai.locationMessageWithAddress", { address })
+          : t("ai.locationMessage");
         const sysMsg: Message = {
           id: `loc-${Date.now()}`,
           role: "assistant",
-          content: `📍 ${locMsg}\n\n现在你可以问我「附近有什么好吃的」，我会根据你的实时位置推荐附近餐厅！`,
+          content: `📍 ${locMsg}\n\n${t("ai.locationAssistantHint")}`,
           timestamp: new Date(),
         };
         setMessages((prev) => [...prev, sysMsg]);
-        toast.success(`位置获取成功：${address || "已获取坐标"}`);  
+        toast.success(
+          address
+            ? t("ai.toastLocationSuccessWithAddress", { address })
+            : t("ai.toastLocationSuccess")
+        );  
       },
       (err) => {
         setLocationLoading(false);
-          toast.error(err.code === 1 ? "请允许浏览器访问你的位置" : "无法获取位置，请稍后重试");
+          toast.error(err.code === 1 ? t("ai.toastLocationPermission") : t("ai.toastLocationFailed"));
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -124,7 +139,7 @@ export default function AiChat() {
 
   const handleClearLocation = () => {
     setUserLocation(null);
-    toast("已关闭位置共享");
+    toast(t("ai.toastLocationClosed"));
   };
 
   const sendMessage = (text: string) => {
@@ -172,13 +187,13 @@ export default function AiChat() {
               </div>
               <div>
                 <h1 className="font-bold text-foreground flex items-center gap-2">
-                  AI 美食助手
+                  {t("ai.title")}
                   <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
-                    GLM-4 驱动
+                    {t("ai.powered")}
                   </span>
                 </h1>
-                <p className="text-xs text-foreground/60">基于你的收藏和喜好，提供个性化美食推荐</p>
+                <p className="text-xs text-foreground/60">{t("ai.subtitle")}</p>
               </div>
             </div>
 
@@ -190,9 +205,9 @@ export default function AiChat() {
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">
-                  {userLocation.address ? userLocation.address.slice(0, 10) + "…" : "位置已共享"}
+                  {userLocation.address ? userLocation.address.slice(0, 10) + "…" : t("ai.locationShared")}
                 </span>
-                <span className="sm:hidden">已定位</span>
+                <span className="sm:hidden">{t("ai.locatedShort")}</span>
               </button>
             ) : (
               <button
@@ -205,7 +220,7 @@ export default function AiChat() {
                 ) : (
                   <MapPinOff className="w-3.5 h-3.5" />
                 )}
-                <span>{locationLoading ? "定位中…" : "📍 获取我的位置"}</span>
+                <span>{locationLoading ? t("ai.locating") : t("ai.getLocation")}</span>
               </button>
             )}
           </div>
@@ -238,7 +253,7 @@ export default function AiChat() {
                         : "text-foreground/50"
                     }`}
                   >
-                    {message.timestamp.toLocaleTimeString("zh-CN", {
+                    {message.timestamp.toLocaleTimeString(language === "zh" ? "zh-CN" : "en-US", {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
@@ -263,7 +278,7 @@ export default function AiChat() {
                     <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" />
                     <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
                     <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
-                    <span className="text-xs text-foreground/50 ml-1">AI 思考中…</span>
+                    <span className="text-xs text-foreground/50 ml-1">{t("ai.thinking")}</span>
                   </div>
                 </Card>
               </div>
@@ -275,23 +290,26 @@ export default function AiChat() {
           {/* Quick prompts - show only at start */}
           {messages.length <= 1 && (
             <div className="flex flex-wrap gap-2 mb-3">
-              {QUICK_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  onClick={() => sendMessage(prompt)}
-                  disabled={chatMutation.isPending}
-                  className="text-xs px-3 py-1.5 rounded-full border border-border bg-muted/30 text-foreground/70 hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
-                >
-                  {prompt}
-                </button>
-              ))}
+              {QUICK_PROMPT_KEYS.map((promptKey) => {
+                const prompt = t(promptKey);
+                return (
+                  <button
+                    key={promptKey}
+                    onClick={() => sendMessage(prompt)}
+                    disabled={chatMutation.isPending}
+                    className="text-xs px-3 py-1.5 rounded-full border border-border bg-muted/30 text-foreground/70 hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+                  >
+                    {prompt}
+                  </button>
+                );
+              })}
             </div>
           )}
 
           {/* Input Area */}
           <div className="flex gap-2">
             <Input
-              placeholder={userLocation ? "问我附近有什么好吃的…" : "问我任何关于美食的问题…"}
+              placeholder={userLocation ? t("ai.inputNearby") : t("ai.inputDefault")}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -318,8 +336,8 @@ export default function AiChat() {
           </div>
           <p className="text-xs text-foreground/40 text-center mt-2">
             {userLocation
-              ? `📍 正在共享位置 · AI 回复仅供参考`
-              : "AI 回复仅供参考，实际用餐体验以餐厅现场为准"}
+              ? t("ai.footerLocation")
+              : t("ai.footerDefault")}
           </p>
         </div>
       </main>

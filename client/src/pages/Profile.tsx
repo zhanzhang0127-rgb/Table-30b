@@ -1,18 +1,22 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { isLocalPreviewHost } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Mail, Phone, User, LogOut, Heart, FileText, MessageCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-import { zhCN } from "date-fns/locale";
+import { enUS, zhCN } from "date-fns/locale";
 
 export default function Profile() {
   const { user, loading, isAuthenticated, logout } = useAuth();
+  const { language, t } = useLanguage();
+  const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const [name, setName] = useState("");
   const [isEditingName, setIsEditingName] = useState(false);
@@ -20,6 +24,11 @@ export default function Profile() {
   const [wechatId, setWechatId] = useState("");
   const [qqId, setQqId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const isLocalPreview = isLocalPreviewHost();
+  const displayEmail =
+    isLocalPreview && user?.email === "local-preview@localhost"
+      ? t("profile.localPreviewAccount")
+      : user?.email || t("profile.noEmail");
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -60,26 +69,27 @@ export default function Profile() {
 
   const updateNameMutation = trpc.profile.updateName.useMutation({
     onSuccess: () => {
-      toast.success("昵称已更新");
+      toast.success(t("profile.toastNameUpdated"));
       setIsEditingName(false);
+      utils.auth.me.invalidate();
     },
     onError: (error) => {
-      toast.error("更新失败：" + error.message);
+      toast.error(t("profile.toastUpdateFailed", { message: error.message }));
     },
   });
 
   const updateProfileMutation = trpc.profile.update.useMutation({
     onSuccess: () => {
-      toast.success("个人信息已更新");
+      toast.success(t("profile.toastInfoUpdated"));
     },
     onError: (error) => {
-      toast.error("更新失败：" + error.message);
+      toast.error(t("profile.toastUpdateFailed", { message: error.message }));
     },
   });
 
   const handleSaveName = async () => {
     if (!name.trim()) {
-      toast.error("昵称不能为空");
+      toast.error(t("profile.toastNameRequired"));
       return;
     }
     setIsSaving(true);
@@ -135,7 +145,7 @@ export default function Profile() {
                     <Input
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="输入新昵称"
+                      placeholder={t("profile.editNamePlaceholder")}
                       maxLength={50}
                       className="text-lg font-bold"
                     />
@@ -144,7 +154,7 @@ export default function Profile() {
                       onClick={handleSaveName}
                       disabled={isSaving}
                     >
-                      保存
+                      {t("common.save")}
                     </Button>
                     <Button
                       size="sm"
@@ -155,22 +165,22 @@ export default function Profile() {
                       }}
                       disabled={isSaving}
                     >
-                      取消
+                      {t("common.cancel")}
                     </Button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 mb-2">
-                    <h1 className="text-3xl font-bold text-foreground">{user?.name || "用户"}</h1>
+                    <h1 className="text-3xl font-bold text-foreground">{user?.name || t("common.user")}</h1>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => setIsEditingName(true)}
                     >
-                      编辑
+                      {t("common.edit")}
                     </Button>
                   </div>
                 )}
-                <p className="text-foreground/70">{user?.email || "未绑定邮箱"}</p>
+                <p className="text-foreground/70">{displayEmail}</p>
               </div>
               <Button 
                 variant="outline"
@@ -178,7 +188,7 @@ export default function Profile() {
                 className="gap-2"
               >
                 <LogOut className="w-4 h-4" />
-                退出登录
+                {t("profile.logout")}
               </Button>
             </div>
 
@@ -186,15 +196,15 @@ export default function Profile() {
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center p-4 bg-muted/30 rounded-lg">
                 <p className="text-2xl font-bold text-primary">{userPosts?.length || 0}</p>
-                <p className="text-sm text-foreground/60">发布</p>
+                <p className="text-sm text-foreground/60">{t("profile.posts")}</p>
               </div>
               <div className="text-center p-4 bg-muted/30 rounded-lg">
                 <p className="text-2xl font-bold text-primary">{likedPosts?.length || 0}</p>
-                <p className="text-sm text-foreground/60">喜欢</p>
+                <p className="text-sm text-foreground/60">{t("profile.likes")}</p>
               </div>
               <div className="text-center p-4 bg-muted/30 rounded-lg">
                 <p className="text-2xl font-bold text-primary">0</p>
-                <p className="text-sm text-foreground/60">粉丝</p>
+                <p className="text-sm text-foreground/60">{t("profile.followers")}</p>
               </div>
             </div>
           </Card>
@@ -202,46 +212,46 @@ export default function Profile() {
           {/* Tabs */}
           <Tabs defaultValue="info" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="info">个人信息</TabsTrigger>
+              <TabsTrigger value="info">{t("profile.info")}</TabsTrigger>
               <TabsTrigger value="posts" className="gap-2">
                 <FileText className="w-4 h-4" />
-                我的发布
+                {t("profile.myPosts")}
               </TabsTrigger>
               <TabsTrigger value="likes" className="gap-2">
                 <Heart className="w-4 h-4" />
-                我的喜欢
+                {t("profile.myLikes")}
               </TabsTrigger>
             </TabsList>
 
             {/* Info Tab */}
             <TabsContent value="info" className="space-y-6">
               <Card className="p-6">
-                <h2 className="text-xl font-bold text-foreground mb-6">联系信息</h2>
+                <h2 className="text-xl font-bold text-foreground mb-6">{t("profile.contact")}</h2>
                 
                 {/* Email */}
                 <div className="mb-6">
                   <label className="block text-sm font-semibold text-foreground mb-2">
                     <Mail className="w-4 h-4 inline mr-2" />
-                    邮箱
+                    {t("profile.email")}
                   </label>
                   <Input
                     type="email"
-                    value={user?.email || ""}
+                    value={displayEmail}
                     disabled
                     className="bg-muted/50 border-border"
                   />
-                  <p className="text-xs text-foreground/60 mt-1">邮箱不可修改</p>
+                  <p className="text-xs text-foreground/60 mt-1">{t("profile.emailReadonly")}</p>
                 </div>
 
                 {/* Phone */}
                 <div className="mb-6">
                   <label className="block text-sm font-semibold text-foreground mb-2">
                     <Phone className="w-4 h-4 inline mr-2" />
-                    手机号
+                    {t("profile.phone")}
                   </label>
                   <Input
                     type="tel"
-                    placeholder="输入手机号"
+                    placeholder={t("profile.phonePlaceholder")}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="bg-muted/50 border-border"
@@ -251,10 +261,10 @@ export default function Profile() {
                 {/* WeChat */}
                 <div className="mb-6">
                   <label className="block text-sm font-semibold text-foreground mb-2">
-                    微信号
+                    {t("profile.wechat")}
                   </label>
                   <Input
-                    placeholder="输入微信号"
+                    placeholder={t("profile.wechatPlaceholder")}
                     value={wechatId}
                     onChange={(e) => setWechatId(e.target.value)}
                     className="bg-muted/50 border-border"
@@ -264,10 +274,10 @@ export default function Profile() {
                 {/* QQ */}
                 <div className="mb-6">
                   <label className="block text-sm font-semibold text-foreground mb-2">
-                    QQ号
+                    {t("profile.qq")}
                   </label>
                   <Input
-                    placeholder="输入QQ号"
+                    placeholder={t("profile.qqPlaceholder")}
                     value={qqId}
                     onChange={(e) => setQqId(e.target.value)}
                     className="bg-muted/50 border-border"
@@ -279,7 +289,7 @@ export default function Profile() {
                   disabled={isSaving}
                   className="bg-primary text-primary-foreground hover:bg-primary/90"
                 >
-                  {isSaving ? "保存中..." : "保存信息"}
+                  {isSaving ? t("profile.saving") : t("profile.saveInfo")}
                 </Button>
               </Card>
             </TabsContent>
@@ -303,7 +313,7 @@ export default function Profile() {
                         <p className="text-sm text-foreground/60 mt-1">
                           {formatDistanceToNow(new Date(post.createdAt), { 
                             addSuffix: true,
-                            locale: zhCN 
+                            locale: language === "zh" ? zhCN : enUS
                           })}
                         </p>
                       </div>
@@ -329,12 +339,12 @@ export default function Profile() {
                 ))
               ) : (
                 <Card className="p-12 text-center">
-                  <p className="text-foreground/70 mb-4">还没有发布过帖子</p>
+                  <p className="text-foreground/70 mb-4">{t("profile.noPosts")}</p>
                   <Button 
                     onClick={() => navigate("/publish")}
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
                   >
-                    去发布
+                    {t("profile.goPublish")}
                   </Button>
                 </Card>
               )}
@@ -383,9 +393,9 @@ export default function Profile() {
                           )}
                         </div>
                         <p className="text-sm text-foreground/60 mb-1">
-                          {post.userName || "用户"} · {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { 
+                          {post.userName || t("common.user")} · {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { 
                             addSuffix: true,
-                            locale: zhCN 
+                            locale: language === "zh" ? zhCN : enUS
                           }) : ""}
                         </p>
                         {post.content && (
@@ -406,12 +416,12 @@ export default function Profile() {
               ) : (
                 <Card className="p-12 text-center">
                   <Heart className="w-12 h-12 text-foreground/20 mx-auto mb-4" />
-                  <p className="text-foreground/70 mb-4">还没有喜欢过帖子</p>
+                  <p className="text-foreground/70 mb-4">{t("profile.noLikes")}</p>
                   <Button 
                     onClick={() => navigate("/feed")}
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
                   >
-                    去社区看看
+                    {t("profile.goCommunity")}
                   </Button>
                 </Card>
               )}

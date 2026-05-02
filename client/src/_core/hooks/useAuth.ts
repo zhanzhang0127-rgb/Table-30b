@@ -1,4 +1,4 @@
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, isLocalPreviewHost } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -9,9 +9,9 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
-    options ?? {};
+  const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
   const utils = trpc.useUtils();
+  const isLocalPreview = isLocalPreviewHost();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
@@ -62,15 +62,23 @@ export function useAuth(options?: UseAuthOptions) {
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
+    if (isLocalPreview) return;
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
-    if (window.location.pathname === redirectPath) return;
+    const nextRedirectPath = redirectPath ?? getLoginUrl();
+    if (
+      window.location.pathname === nextRedirectPath ||
+      window.location.href === nextRedirectPath
+    ) {
+      return;
+    }
 
-    window.location.href = redirectPath
+    window.location.href = nextRedirectPath
   }, [
     redirectOnUnauthenticated,
     redirectPath,
+    isLocalPreview,
     logoutMutation.isPending,
     meQuery.isLoading,
     state.user,

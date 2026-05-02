@@ -1,6 +1,8 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Heart, MapPin, MessageCircle, Users, Utensils, Zap, AlertCircle, Info } from "lucide-react";
 import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
@@ -8,6 +10,7 @@ import { useEffect, useState } from "react";
 
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const [, navigate] = useLocation();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -16,11 +19,11 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const error = params.get('error');
     if (error === 'invalid_email_domain') {
-      setErrorMessage('注册失败：只允许使用 @student.xjtlu.edu.cn 邮箱地址注册。请使用你的大学邮箱或第三方账号（Google、Microsoft等）重新登录。');
+      setErrorMessage(t("home.errorInvalidEmail"));
     } else if (error === 'oauth_failed') {
-      setErrorMessage('登录失败：认证出错，请稍后重试。');
+      setErrorMessage(t("home.errorOauthFailed"));
     }
-  }, []);
+  }, [t]);
 
   // Auto-redirect authenticated users to feed
   useEffect(() => {
@@ -71,14 +74,15 @@ export default function Home() {
           </div>
           
           <div className="flex items-center gap-3">
+            <LanguageSwitcher />
             <a href={getLoginUrl()} className="text-sm text-foreground/70 hover:text-foreground transition-colors">
-              登录
+              {t("home.login")}
             </a>
             <Button 
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => window.location.href = getLoginUrl()}
             >
-              注册
+              {t("home.register")}
             </Button>
           </div>
         </div>
@@ -97,10 +101,10 @@ export default function Home() {
               />
             </div>
             <h1 className="text-5xl md:text-6xl font-bold text-foreground">
-              吃了吗？
+              {t("home.heroTitle")}
             </h1>
             <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
-              发现美食，分享快乐。与朋友一起探索城市最好的餐厅，分享你的美食故事。
+              {t("home.heroSubtitle")}
             </p>
             
             {/* Login tip */}
@@ -108,8 +112,8 @@ export default function Home() {
               <div className="flex items-start gap-2">
                 <Info className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="text-left text-sm text-amber-800">
-                  <p className="font-medium mb-1">登录提示</p>
-                  <p>请使用 <strong>Google、Microsoft、Facebook 或 Apple</strong> 账号登录。跳转后请直接点击对应的第三方登录按钮，无需输入邮箱。</p>
+                  <p className="font-medium mb-1">{t("home.loginTipTitle")}</p>
+                  <p>{t("home.loginTipBody")}</p>
                 </div>
               </div>
             </div>
@@ -120,13 +124,13 @@ export default function Home() {
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
                 onClick={() => window.location.href = getLoginUrl()}
               >
-                立即开始
+                {t("home.startNow")}
               </Button>
               <Button 
                 size="lg"
                 variant="outline"
               >
-                了解更多
+                {t("home.learnMore")}
               </Button>
             </div>
           </div>
@@ -139,9 +143,9 @@ export default function Home() {
                   <MessageCircle className="w-6 h-6 text-primary" />
                 </div>
               </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">分享美食</h3>
+              <h3 className="text-lg font-bold text-foreground mb-2">{t("home.featureShareTitle")}</h3>
               <p className="text-foreground/70">
-                发布你的美食照片和评价，与社区分享你的发现。
+                {t("home.featureShareBody")}
               </p>
             </Card>
 
@@ -151,9 +155,9 @@ export default function Home() {
                   <Zap className="w-6 h-6 text-secondary" />
                 </div>
               </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">AI推荐</h3>
+              <h3 className="text-lg font-bold text-foreground mb-2">{t("home.featureAiTitle")}</h3>
               <p className="text-foreground/70">
-                告诉AI你的口味偏好，获得智能推荐的餐厅。
+                {t("home.featureAiBody")}
               </p>
             </Card>
 
@@ -163,9 +167,9 @@ export default function Home() {
                   <MapPin className="w-6 h-6 text-accent" />
                 </div>
               </div>
-              <h3 className="text-lg font-bold text-foreground mb-2">发现排行榜</h3>
+              <h3 className="text-lg font-bold text-foreground mb-2">{t("home.featureRankTitle")}</h3>
               <p className="text-foreground/70">
-                浏览你所在地区最受欢迎的餐厅排行榜。
+                {t("home.featureRankBody")}
               </p>
             </Card>
           </div>
@@ -173,17 +177,17 @@ export default function Home() {
           {/* CTA Section */}
           <Card className="p-12 bg-gradient-to-r from-primary/10 to-secondary/10 border-0 text-center">
             <h2 className="text-3xl font-bold text-foreground mb-4">
-              准备好了吗？
+              {t("home.ctaTitle")}
             </h2>
             <p className="text-foreground/70 mb-6 max-w-xl mx-auto">
-              加入吃了吗社区，发现美食，分享快乐，与美食爱好者一起探索城市的每一个角落。
+              {t("home.ctaBody")}
             </p>
             <Button 
               size="lg"
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => window.location.href = getLoginUrl()}
             >
-              现在注册
+              {t("home.registerNow")}
             </Button>
           </Card>
         </div>
@@ -192,7 +196,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-border mt-16 py-8">
         <div className="container text-center text-foreground/60 text-sm">
-          <p>© 2024 吃了吗 - 美食分享与餐厅推荐平台</p>
+          <p>{t("home.footer")}</p>
         </div>
       </footer>
     </div>

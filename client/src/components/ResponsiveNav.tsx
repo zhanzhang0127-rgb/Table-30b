@@ -1,28 +1,57 @@
-import { useLocation } from "wouter";
-import { MessageCircle, Trophy, Bot, User, Plus, UtensilsCrossed, Settings } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/contexts/LanguageContext";
+import {
+  Bot,
+  MessageCircle,
+  Settings,
+  Trophy,
+  User,
+  UtensilsCrossed,
+} from "lucide-react";
+import { useLocation } from "wouter";
+
+const communityPaths = [
+  "/feed",
+  "/post/",
+  "/restaurants",
+  "/restaurant/",
+  "/publish",
+  "/submit-restaurant",
+];
 
 export function ResponsiveNav() {
   const [location, navigate] = useLocation();
-  const { isAuthenticated, user } = useAuth();
+  const { user } = useAuth();
+  const { t } = useLanguage();
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
-  // Don't show nav on home/landing page or admin page
-  if (location === "/" || location.startsWith("/admin")) return null;
-
-  const navItems = [
-    { href: "/feed", label: "社区", icon: MessageCircle },
-    { href: "/restaurants", label: "餐厅", icon: UtensilsCrossed },
-    { href: "/rankings", label: "排行榜", icon: Trophy },
-    { href: "/ai-chat", label: "AI助手", icon: Bot },
-    { href: "/profile", label: "个人", icon: User },
+  const mainNavItems = [
+    { href: "/feed", label: t("nav.community"), icon: MessageCircle },
+    { href: "/rankings", label: t("nav.rankings"), icon: Trophy },
+    { href: "/ai-chat", label: t("nav.aiChat"), icon: Bot },
+    { href: "/profile", label: t("nav.profile"), icon: User },
   ];
 
-  const isActive = (href: string) => {
-    if (href === "/feed") {
-      return location === "/feed" || location.startsWith("/post/");
-    }
+  const communityNavItems = [
+    { href: "/feed", label: t("nav.discussion"), icon: MessageCircle },
+    { href: "/restaurants", label: t("nav.restaurants"), icon: UtensilsCrossed },
+  ];
+
+  if (location === "/" || location.startsWith("/admin")) return null;
+
+  const isCommunitySection = communityPaths.some((path) =>
+    path.endsWith("/") ? location.startsWith(path) : location === path
+  );
+
+  const isMainActive = (href: string) => {
+    if (href === "/feed") return isCommunitySection;
+    return location === href;
+  };
+
+  const isCommunityActive = (href: string) => {
+    if (href === "/feed") return location === "/feed" || location.startsWith("/post/");
     if (href === "/restaurants") {
       return location === "/restaurants" || location.startsWith("/restaurant/");
     }
@@ -31,13 +60,11 @@ export function ResponsiveNav() {
 
   return (
     <>
-      {/* Desktop Top Navigation */}
-      <nav className="hidden md:block sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-border shadow-sm">
-        <div className="container flex items-center justify-between h-14">
-          {/* Logo */}
+      <nav className="sticky top-0 z-50 hidden border-b bg-white/90 shadow-sm backdrop-blur-md md:block">
+        <div className="container flex h-14 items-center justify-between">
           <button
             onClick={() => navigate("/feed")}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            className="flex items-center gap-2 transition-opacity hover:opacity-80"
           >
             <img
               src="https://d2xsxph8kpxj0f.cloudfront.net/310519663506480782/XzEWDxgSS5RTJYj5etncA4/chileoma-logo-J5D7zC5YTWiDqDhd7fMXt5.webp"
@@ -47,28 +74,27 @@ export function ResponsiveNav() {
             <span className="text-lg font-bold text-primary">吃了吗</span>
           </button>
 
-          {/* Nav Items */}
           <div className="flex items-center gap-1">
-            {navItems.map((item) => {
+            {mainNavItems.map((item) => {
               const Icon = item.icon;
+              const active = isMainActive(item.href);
               return (
                 <button
                   key={item.href}
                   onClick={() => navigate(item.href)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    isActive(item.href)
-                      ? "text-primary bg-primary/10"
-                      : "text-foreground/60 hover:text-foreground hover:bg-muted/50"
+                  className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="h-4 w-4" />
                   <span>{item.label}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-2">
             {isAdmin && (
               <Button
@@ -76,82 +102,67 @@ export function ResponsiveNav() {
                 size="sm"
                 variant="outline"
               >
-                <Settings className="w-4 h-4 mr-1" />
-                管理后台
+                <Settings className="h-4 w-4" />
+                {t("nav.admin")}
               </Button>
             )}
-            {isAuthenticated && (
-              <Button
-                onClick={() => navigate("/publish")}
-                size="sm"
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                发布
-              </Button>
-            )}
+            <LanguageSwitcher />
           </div>
         </div>
       </nav>
 
-      {/* Mobile Bottom Navigation - with publish button in center */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-border shadow-lg">
-        <div className="flex items-center justify-around h-16 relative">
-          {/* Left nav items: 社区, 餐厅 */}
-          {navItems.slice(0, 2).map((item) => {
+      {isCommunitySection && (
+        <div className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur-md md:top-14">
+          <div className="container flex h-12 items-center justify-center gap-2 overflow-x-auto">
+            {communityNavItems.map((item) => {
+              const Icon = item.icon;
+              const active = isCommunityActive(item.href);
+              return (
+                <button
+                  key={item.href}
+                  onClick={() => navigate(item.href)}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-card text-primary shadow-sm"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white/95 shadow-lg backdrop-blur-md md:hidden">
+        <div className="grid h-16 grid-cols-4">
+          {mainNavItems.map((item) => {
             const Icon = item.icon;
+            const active = isMainActive(item.href);
             return (
               <button
                 key={item.href}
                 onClick={() => navigate(item.href)}
-                className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors ${
-                  isActive(item.href)
+                className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                  active
                     ? "text-primary"
-                    : "text-foreground/50 hover:text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-medium">{item.label}</span>
-              </button>
-            );
-          })}
-
-          {/* Center: Publish Button (raised) */}
-          {isAuthenticated && (
-            <button
-              onClick={() => navigate("/publish")}
-              className="flex flex-col items-center justify-center flex-1 h-full -mt-4"
-            >
-              <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg">
-                <Plus className="w-6 h-6" />
-              </div>
-              <span className="text-[10px] font-medium text-primary mt-0.5">发布</span>
-            </button>
-          )}
-
-          {/* Right nav items: AI助手, 个人 */}
-          {navItems.slice(3, 5).map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.href}
-                onClick={() => navigate(item.href)}
-                className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors ${
-                  isActive(item.href)
-                    ? "text-primary"
-                    : "text-foreground/50 hover:text-foreground"
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-medium">{item.label}</span>
+                <Icon className="h-5 w-5" />
+                <span className="text-[11px] font-medium">{item.label}</span>
               </button>
             );
           })}
         </div>
       </nav>
 
-      {/* Mobile bottom padding to avoid content overlap */}
-      <div className="md:hidden h-16"></div>
+      <div className="h-16 md:hidden" />
+      <div className="fixed right-3 top-3 z-50 md:hidden">
+        <LanguageSwitcher compact />
+      </div>
     </>
   );
 }

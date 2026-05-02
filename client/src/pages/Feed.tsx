@@ -1,111 +1,103 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { PostImageGrid } from "@/components/PostImageGrid";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Heart, MessageCircle, Trash2 } from "lucide-react";
-import { useLocation } from "wouter";
-import { useEffect, useState } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { hasMissingPostImages, parsePostImages } from "@/lib/postImages";
+import { trpc } from "@/lib/trpc";
+import { Heart, ImageOff, MessageCircle, Plus, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { zhCN } from "date-fns/locale";
+import { enUS, zhCN } from "date-fns/locale";
+import { useEffect, useState, type MouseEvent } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 export default function Feed() {
   const { isAuthenticated, loading, user } = useAuth();
+  const { language, t } = useLanguage();
   const [, navigate] = useLocation();
   const [offset, setOffset] = useState(0);
   const [allPosts, setAllPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
 
-  // Redirect to home if not authenticated
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      navigate("/");
-    }
+    if (!loading && !isAuthenticated) navigate("/");
   }, [isAuthenticated, loading, navigate]);
 
-  // Fetch posts
   const { data: postsData, isLoading } = trpc.posts.getFeed.useQuery(
     { limit: 20, offset },
     { enabled: isAuthenticated }
   );
 
-  // Fetch user's liked posts from backend
-  const { data: myLikes } = trpc.likes.getMyLikedPosts.useQuery(
-    undefined,
-    { enabled: isAuthenticated }
-  );
+  const { data: myLikes } = trpc.likes.getMyLikedPosts.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
 
-  // Initialize liked posts from backend
   useEffect(() => {
-    if (myLikes) {
-      setLikedPosts(new Set(myLikes as number[]));
-    }
+    if (myLikes) setLikedPosts(new Set(myLikes as number[]));
   }, [myLikes]);
 
-  // Update allPosts when new data arrives
   useEffect(() => {
-    if (postsData) {
-      if (offset === 0) {
-        setAllPosts(postsData as any[]);
-      } else {
-        setAllPosts(prev => [...prev, ...(postsData as any[])]);
-      }
+    if (!postsData) return;
+    if (offset === 0) {
+      setAllPosts(postsData as any[]);
+    } else {
+      setAllPosts((prev) => [...prev, ...(postsData as any[])]);
     }
   }, [postsData, offset]);
 
-  // Like post mutation
   const likePostMutation = trpc.likes.likePost.useMutation({
-    onSuccess: (_, variables) => {
-      setLikedPosts(prev => new Set(prev).add(variables));
-      // Update post likes count in local state
-      setAllPosts(prev => prev.map(p => 
-        p.id === variables ? { ...p, likes: (p.likes || 0) + 1 } : p
-      ));
+    onSuccess: (_, postId) => {
+      setLikedPosts((prev) => new Set(prev).add(postId));
+      setAllPosts((prev) =>
+        prev.map((post) =>
+          post.id === postId ? { ...post, likes: (post.likes || 0) + 1 } : post
+        )
+      );
     },
-    onError: (error) => {
-      toast.error("点赞失败：" + error.message);
-    },
+    onError: (error) => toast.error(t("feed.toastLikeFailed", { message: error.message })),
   });
 
-  // Unlike post mutation
   const unlikePostMutation = trpc.likes.unlikePost.useMutation({
-    onSuccess: (_, variables) => {
-      setLikedPosts(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(variables);
-        return newSet;
+    onSuccess: (_, postId) => {
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        next.delete(postId);
+        return next;
       });
-      // Update post likes count in local state
-      setAllPosts(prev => prev.map(p => 
-        p.id === variables ? { ...p, likes: Math.max((p.likes || 0) - 1, 0) } : p
-      ));
+      setAllPosts((prev) =>
+        prev.map((post) =>
+          post.id === postId
+            ? { ...post, likes: Math.max((post.likes || 0) - 1, 0) }
+            : post
+        )
+      );
     },
-    onError: (error) => {
-      toast.error("取消点赞失败：" + error.message);
-    },
+    onError: (error) => toast.error(t("feed.toastUnlikeFailed", { message: error.message })),
   });
 
-  // Delete post mutation
   const deletePostMutation = trpc.posts.delete.useMutation({
-    onSuccess: (_, variables) => {
-      setAllPosts(prev => prev.filter(p => p.id !== variables));
-      toast.success("帖子已删除");
+    onSuccess: (_, postId) => {
+      setAllPosts((prev) => prev.filter((post) => post.id !== postId));
+      toast.success(t("feed.toastDeleted"));
     },
     onError: (error: any) => {
       if (error.data?.code === "FORBIDDEN") {
-        toast.error("您没有权限删除这个帖子");
+        toast.error(t("feed.toastNoDeletePermission"));
       } else if (error.data?.code === "NOT_FOUND") {
-        toast.error("帖子不存在");
+        toast.error(t("feed.toastNotFound"));
       } else {
-        toast.error("删除失败：" + error.message);
+        toast.error(t("feed.toastDeleteFailed", { message: error.message }));
       }
     },
   });
 
-  const handleLikePost = (postId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
+  const handleLikePost = (postId: number, event: MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
     if (likePostMutation.isPending || unlikePostMutation.isPending) return;
+
     if (likedPosts.has(postId)) {
       unlikePostMutation.mutate(postId);
     } else {
@@ -113,158 +105,206 @@ export default function Feed() {
     }
   };
 
-  const handleDeletePost = (postId: number, userId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (user?.id !== userId) {
-      toast.error("您没有权限删除这个帖子");
+  const handleDeletePost = (
+    postId: number,
+    postUserId: number,
+    event: MouseEvent
+  ) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (user?.id !== postUserId) {
+      toast.error(t("feed.toastNoDeletePermission"));
       return;
     }
-    if (confirm("确定要删除这个帖子吗？")) {
-      deletePostMutation.mutate(postId);
-    }
+    if (confirm(t("feed.confirmDelete"))) deletePostMutation.mutate(postId);
   };
 
-  const handleGoToComments = (postId: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
+  const handleGoToComments = (postId: number, event: MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
     navigate(`/post/${postId}`);
   };
 
   if (loading || !isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-accent border-t-transparent" />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Main Content - no header, using global ResponsiveNav */}
-      <main className="container py-6">
-        <div className="max-w-2xl mx-auto space-y-4">
-          {isLoading && offset === 0 ? (
-            <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-4 border-accent border-t-transparent"></div>
+      <main className="container py-6 sm:py-8">
+        <div className="mx-auto max-w-3xl">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <Badge variant="outline" className="mb-2 bg-card">
+                {t("feed.badge")}
+              </Badge>
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+                {t("feed.title")}
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t("feed.subtitle")}
+              </p>
             </div>
-          ) : allPosts && allPosts.length > 0 ? (
-            <>
-              {allPosts.map((post) => (
-                <Card
-                  key={post.id}
-                  className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => navigate(`/post/${post.id}`)}
-                >
-                  {/* Post Header */}
-                  <div className="p-4 pb-2">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
-                          <span className="text-sm font-bold text-primary">
-                            {post.userName?.charAt(0) || "U"}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="font-semibold text-sm text-foreground">{post.userName || "用户"}</p>
-                          <p className="text-xs text-foreground/50">
-                            {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), {
-                              addSuffix: true,
-                              locale: zhCN
-                            }) : "刚刚"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {post.rating && (
-                          <div className="flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full">
-                            <span className="text-sm font-bold text-amber-500">★</span>
-                            <span className="text-sm font-semibold text-amber-700">{post.rating}</span>
+            <Button
+              className="shrink-0 whitespace-nowrap"
+              onClick={() => navigate("/publish")}
+            >
+              <Plus className="h-4 w-4" />
+              {t("feed.publish")}
+            </Button>
+          </div>
+
+          {isLoading && offset === 0 ? (
+            <div className="flex justify-center py-16">
+              <div className="h-12 w-12 animate-spin rounded-full border-4 border-accent border-t-transparent" />
+            </div>
+          ) : allPosts.length > 0 ? (
+            <div className="space-y-4">
+              {allPosts.map((post) => {
+                const images = parsePostImages(post.images);
+                const hasMissingImages = hasMissingPostImages(post.images);
+                const isLiked = likedPosts.has(post.id);
+
+                return (
+                  <Card
+                    key={post.id}
+                    className="gap-0 overflow-hidden rounded-lg py-0 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    onClick={() => navigate(`/post/${post.id}`)}
+                  >
+                    <article className="cursor-pointer">
+                      <div className="p-4 sm:p-5">
+                        <div className="mb-4 flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-sm font-semibold text-primary">
+                              {post.userName?.charAt(0) || "U"}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold">
+                                {post.userName || t("common.user")}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {post.createdAt
+                                  ? formatDistanceToNow(
+                                      new Date(post.createdAt),
+                                      {
+                                        addSuffix: true,
+                                        locale: language === "zh" ? zhCN : enUS,
+                                      }
+                                    )
+                                  : t("common.justNow")}
+                              </p>
+                            </div>
                           </div>
-                        )}
-                        {user?.id === post.userId && (
-                          <button
-                            onClick={(e) => handleDeletePost(post.id, post.userId, e)}
-                            disabled={deletePostMutation.isPending}
-                            className="p-1.5 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors text-foreground/40"
-                            title="删除帖子"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
 
-                    {/* Post Content */}
-                    <h3 className="text-base font-bold text-foreground mb-1">{post.title}</h3>
-                    <p className="text-sm text-foreground/70 line-clamp-3">{post.content}</p>
-                  </div>
-
-                  {/* Post Images */}
-                  {post.images && (() => {
-                    const imgs = typeof post.images === 'string' ? JSON.parse(post.images || "[]") : post.images;
-                    return imgs.length > 0 ? (
-                      <div className="px-4 py-2">
-                        <div className={`grid gap-2 ${imgs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                          {imgs.slice(0, 4).map((img: string, idx: number) => (
-                            <img
-                              key={idx}
-                              src={img}
-                              alt={`图片 ${idx + 1}`}
-                              className={`w-full object-cover rounded-lg ${imgs.length === 1 ? 'h-64' : 'h-32'}`}
-                            />
-                          ))}
+                          <div className="flex shrink-0 items-center gap-2">
+                            {post.rating && (
+                              <Badge variant="secondary">
+                                {t("common.rating")} {post.rating}
+                              </Badge>
+                            )}
+                            {user?.id === post.userId && (
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                title={t("feed.deleteTitle")}
+                                disabled={deletePostMutation.isPending}
+                                onClick={(event) =>
+                                  handleDeletePost(
+                                    post.id,
+                                    post.userId,
+                                    event
+                                  )
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
+
+                        <h2 className="text-lg font-semibold leading-snug">
+                          {post.title}
+                        </h2>
+                        {post.content && (
+                          <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">
+                            {post.content}
+                          </p>
+                        )}
                       </div>
-                    ) : null;
-                  })()}
 
-                  {/* Post Actions - only like and comment, no bookmark/share */}
-                  <div className="px-4 py-3 flex items-center gap-6 border-t border-border/50">
-                    <button
-                      onClick={(e) => handleLikePost(post.id, e)}
-                      disabled={likePostMutation.isPending || unlikePostMutation.isPending}
-                      className={`flex items-center gap-1.5 text-sm transition-colors ${
-                        likedPosts.has(post.id)
-                          ? "text-red-500"
-                          : "text-foreground/50 hover:text-red-500"
-                      }`}
-                    >
-                      <Heart
-                        className="w-[18px] h-[18px]"
-                        fill={likedPosts.has(post.id) ? "currentColor" : "none"}
-                      />
-                      <span>{post.likes || 0}</span>
-                    </button>
-                    <button
-                      onClick={(e) => handleGoToComments(post.id, e)}
-                      className="flex items-center gap-1.5 text-sm text-foreground/50 hover:text-primary transition-colors"
-                    >
-                      <MessageCircle className="w-[18px] h-[18px]" />
-                      <span>{post.comments || 0}</span>
-                    </button>
-                  </div>
-                </Card>
-              ))}
+                      {images.length > 0 && (
+                        <div className="px-4 pb-4 sm:px-5">
+                          <PostImageGrid images={images} />
+                        </div>
+                      )}
 
-              {/* Load More Button */}
+                      {images.length === 0 && hasMissingImages && (
+                        <div className="mx-4 mb-4 flex items-center gap-2 rounded-lg border border-dashed bg-muted/40 px-3 py-3 text-sm text-muted-foreground sm:mx-5">
+                          <ImageOff className="h-4 w-4 shrink-0" />
+                          {t("feed.badImage")}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 border-t px-4 py-3 sm:px-5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={
+                            isLiked
+                              ? "text-destructive hover:text-destructive"
+                              : "text-muted-foreground"
+                          }
+                          disabled={
+                            likePostMutation.isPending ||
+                            unlikePostMutation.isPending
+                          }
+                          onClick={(event) => handleLikePost(post.id, event)}
+                        >
+                          <Heart
+                            className="h-4 w-4"
+                            fill={isLiked ? "currentColor" : "none"}
+                          />
+                          {post.likes || 0}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground"
+                          onClick={(event) =>
+                            handleGoToComments(post.id, event)
+                          }
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          {post.comments || 0}
+                        </Button>
+                      </div>
+                    </article>
+                  </Card>
+                );
+              })}
+
               {postsData && (postsData as any[]).length >= 20 && (
-                <div className="flex justify-center pt-4">
+                <div className="flex justify-center pt-2">
                   <Button
                     onClick={() => setOffset(offset + 20)}
                     disabled={isLoading}
                     variant="outline"
                   >
-                    加载更多
+                    {t("feed.loadMore")}
                   </Button>
                 </div>
               )}
-            </>
+            </div>
           ) : (
-            <div className="text-center py-12">
-              <p className="text-foreground/60 mb-4">暂无帖子</p>
-              <Button onClick={() => navigate("/publish")} className="bg-primary text-primary-foreground">
-                发布第一条帖子
+            <div className="rounded-lg border bg-card p-10 text-center shadow-sm">
+              <p className="mb-4 text-muted-foreground">{t("feed.empty")}</p>
+              <Button onClick={() => navigate("/publish")}>
+                <Plus className="h-4 w-4" />
+                {t("feed.publishFirst")}
               </Button>
             </div>
           )}

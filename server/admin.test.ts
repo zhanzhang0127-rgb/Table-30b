@@ -128,6 +128,14 @@ describe("Admin Router - Permission Guard", () => {
 });
 
 describe("Restaurants Router - Submit & ReverseGeocode", () => {
+  const validRestaurantSubmission = {
+    name: "Test Restaurant",
+    address: "123 Test Street",
+    priceLevel: "30-50 元/人",
+    description: "A small restaurant worth reviewing.",
+    rating: 4,
+  };
+
   it("should reject unauthenticated users from reverseGeocode", async () => {
     const caller = appRouter.createCaller(createUnauthCtx());
     await expect(
@@ -138,21 +146,24 @@ describe("Restaurants Router - Submit & ReverseGeocode", () => {
   it("should reject unauthenticated users from submit", async () => {
     const caller = appRouter.createCaller(createUnauthCtx());
     await expect(
-      caller.restaurants.submit({ name: "Test Restaurant" })
+      caller.restaurants.submit(validRestaurantSubmission)
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 
   it("should reject submit with empty name", async () => {
     const caller = appRouter.createCaller(createCtx("user"));
     await expect(
-      caller.restaurants.submit({ name: "" })
+      caller.restaurants.submit({ ...validRestaurantSubmission, name: "" })
     ).rejects.toBeDefined();
   });
 
   it("authenticated user can call submit (DB may be unavailable in test, but not UNAUTHORIZED)", async () => {
     const caller = appRouter.createCaller(createCtx("user"));
     try {
-      const result = await caller.restaurants.submit({ name: "太仓小吃店" });
+      const result = await caller.restaurants.submit({
+        ...validRestaurantSubmission,
+        name: "太仓小吃店",
+      });
       // If DB is available, should return an object with id
       expect(result).toBeDefined();
     } catch (e: any) {

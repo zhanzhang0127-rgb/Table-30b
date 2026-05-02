@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { toast } from "sonner";
+import { CUISINE_LABELS, type Cuisine } from "@shared/cuisine";
 
 export default function Feed() {
   const { isAuthenticated, loading, user } = useAuth();
@@ -247,8 +248,29 @@ export default function Feed() {
                     </div>
 
                     {/* Post Content */}
+                    {post.postType && (
+                      <span className="text-xs text-foreground/45 mb-1 block">
+                        {post.postType === 'delivery' ? '🛵 外卖' : '🍽 堂食'}
+                      </span>
+                    )}
                     <h3 className="text-base font-bold text-foreground mb-1">{post.title}</h3>
                     <p className="text-sm text-foreground/70 line-clamp-3">{post.content}</p>
+
+                    {/* Classification chips */}
+                    {(post.cuisine || (post.pricePerPerson && post.pricePerPerson !== '不想透露')) && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {post.cuisine && (
+                          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                            {CUISINE_LABELS[post.cuisine as Cuisine] ?? post.cuisine}
+                          </span>
+                        )}
+                        {post.pricePerPerson && post.pricePerPerson !== '不想透露' && (
+                          <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                            {post.pricePerPerson}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Post Images */}

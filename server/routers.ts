@@ -10,6 +10,9 @@ import { ENV } from "./_core/env";
 import { invokeGLM4, type GLM4Message } from "./_core/glm4";
 import { transcribeAudio, transcribeBuffer } from "./_core/voiceTranscription";
 import { extractPostFromTranscript } from "./_core/voicePostExtractor";
+import { classifyPost } from "./_core/postClassifier";
+import { CUISINES } from "@shared/cuisine";
+import { PRICE_RANGES } from "@shared/priceRange";
 // Using native fetch (Node 18+)
 
 // Admin procedure: allows both admin and super_admin
@@ -41,6 +44,15 @@ export const appRouter = router({
 
   // Posts router
   posts: router({
+    preview: protectedProcedure
+      .input(z.object({
+        title: z.string().min(1),
+        content: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        return classifyPost(input.title, input.content);
+      }),
+
     create: protectedProcedure
       .input(z.object({
         title: z.string().min(1),
@@ -52,6 +64,9 @@ export const appRouter = router({
         valueRating: z.number().int().min(1).max(5),
         location: z.string().max(255).optional(),
         rating: z.number().min(1).max(5).optional(),
+        cuisine: z.enum(CUISINES).optional(),
+        pricePerPerson: z.enum(PRICE_RANGES).optional(),
+        restaurantHint: z.string().max(100).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         let imageUrls: string[] = [];
@@ -100,6 +115,9 @@ export const appRouter = router({
           tasteRating: input.tasteRating,
           valueRating: input.valueRating,
           location: normalizedLocation,
+          cuisine: input.cuisine ?? null,
+          pricePerPerson: input.pricePerPerson ?? null,
+          restaurantHint: input.restaurantHint ?? null,
         });
       }),
     
@@ -362,14 +380,26 @@ export const appRouter = router({
       }),
   }),
 
-  // Rankings router
+  // Rankings router (post-centric, no restaurant DB required)
   rankings: router({
     getByDimension: publicProcedure
       .input(z.object({
-        dimension: z.enum(['overall', 'hotThisWeek', 'topRated', 'bestValue', 'newlyFamous']),
-        limit: z.number().default(20),
+        dimension: z.enum(['weeklyHot', 'taste', 'value', 'warning', 'cuisine']),
+        cuisine: z.enum(CUISINES).optional(),
+        priceRange: z.enum(PRICE_RANGES).optional(),
+        limit: z.number().default(5),
       }))
-      .query(({ input }) => db.getRestaurantRankings(input.dimension, input.limit)),
+      .query(async ({ input }) => {
+        switch (input.dimension) {
+          case 'weeklyHot': return db.getWeeklyHotPosts(input.limit);
+          case 'taste':     return db.getTopByTasteRating(input.limit);
+          case 'value':     return db.getTopByValueRating(input.limit, input.priceRange);
+          case 'warning':   return db.getWarningPosts(input.limit);
+          case 'cuisine':
+            if (!input.cuisine) throw new TRPCError({ code: 'BAD_REQUEST', message: '需指定 cuisine' });
+            return db.getPostsByCuisine(input.cuisine, input.limit);
+        }
+      }),
   }),
 
   // Admin router
@@ -498,14 +528,42 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const user = ctx.user;
 
+        // 检测用户消息中的类别意图
+        const cuisineKeywords: Record<string, string> = {
+          '面食': '面食', '拉面': '面食', '米线': '面食', '面条': '面食', '馄饨': '面食',
+          '火锅': '火锅', '麻辣烫': '火锅', '串串': '火锅', '冒菜': '火锅',
+          '烧烤': '烧烤', '烤肉': '烧烤', '撸串': '烧烤',
+          '快餐': '小炒家常', '盖浇饭': '小炒家常', '小炒': '小炒家常',
+          '日料': '日韩料理', '寿司': '日韩料理', '韩餐': '日韩料理', '拌饭': '日韩料理',
+          '汉堡': '西餐快餐', '披萨': '西餐快餐', '轻食': '西餐快餐',
+          '奶茶': '甜品饮品', '咖啡': '甜品饮品', '甜点': '甜品饮品',
+        };
+        const priceBudgetKeywords: Record<string, string> = {
+          '便宜': '<¥15', '经济': '<¥15', '穷鬼': '<¥15', '10元': '<¥15', '15元': '<¥15',
+          '20元': '¥15-30', '30元': '¥15-30', '实惠': '¥15-30',
+          '50元': '¥30-50', '改善': '¥30-50',
+        };
+
+        let detectedCuisine: string | null = null;
+        let detectedPriceRange: string | null = null;
+        for (const [kw, cuisine] of Object.entries(cuisineKeywords)) {
+          if (input.message.includes(kw)) { detectedCuisine = cuisine; break; }
+        }
+        for (const [kw, price] of Object.entries(priceBudgetKeywords)) {
+          if (input.message.includes(kw)) { detectedPriceRange = price; break; }
+        }
+
         // 从数据库获取用户行为上下文 + 附近餐厅（如果有位置）
-        const [likedPosts, favRestaurants, recentPosts, nearbyRestaurants] = await Promise.all([
+        const [likedPosts, favRestaurants, recentPosts, nearbyRestaurants, cuisineTopPosts] = await Promise.all([
           db.getMyLikedPostsWithDetails(user.id, 5),
           db.getUserFavorites(user.id),
           db.getPostsForFeed(8, 0),
           input.userLocation
             ? db.getNearbyRestaurants(input.userLocation.latitude, input.userLocation.longitude, 5, 8)
             : Promise.resolve([]),
+          detectedCuisine
+            ? db.getPostsByCuisine(detectedCuisine, 3)
+            : Promise.resolve({ posts: [], totalCount: 0, distinctAuthors: 0 }),
         ]);
 
         const favNames = (favRestaurants as any[]).slice(0, 5).map((r: any) => r.name).join('、') || '暂无';
@@ -530,6 +588,14 @@ export const appRouter = router({
           ? `- 附近5km内餐厅：${nearbyInfo}`
           : '';
 
+        const cuisineTopLine = cuisineTopPosts.posts.length > 0
+          ? `- 社区${detectedCuisine}榜单前${cuisineTopPosts.posts.length}名：${cuisineTopPosts.posts.map(p => `《${p.title}》`).join('、')}`
+          : '';
+
+        const budgetLine = detectedPriceRange
+          ? `- 用户预算参考：${detectedPriceRange}`
+          : '';
+
         const systemPrompt = `你是「吃了吗」美食社交平台的 AI 助手，专门帮助用户发现好餐厅、分享美食体验。
 
 当前用户信息：
@@ -538,18 +604,22 @@ export const appRouter = router({
 - 最近点赞的帖子：${likedTitles}
 ${locationLine}
 ${nearbyLine}
+${cuisineTopLine}
+${budgetLine}
 
 平台近期热门内容：${hotPosts}
 
 你的职责：
 1. 根据用户口味偏好和收藏历史给出个性化餐厅推荐
 2. 如果用户提供了位置，优先推荐附近餐厅列表中的餐厅
-3. 回答关于美食、餐厅、菜系的问题
-4. 帮助用户分析饮食偏好
+3. 如果上下文有该类别的榜单数据，优先引用真实帖子标题作为推荐来源
+4. 回答关于美食、餐厅、菜系的问题
+5. 帮助用户分析饮食偏好
 
 回复要求：
 - 用中文回复，语气友好自然
 - 推荐附近餐厅时说明距离和推荐理由
+- 引用社区帖子时用书名号（《帖子标题》）
 - 回复简洁，不超过350字
 - 非美食相关问题礼貌引导回美食话题`;
 
@@ -564,6 +634,27 @@ ${nearbyLine}
 
         const reply = await invokeGLM4(messages, { temperature: 0.8, maxTokens: 600 });
 
+        // Extract book-mark references from reply so frontend can render clickable links
+        const bookmarkMatches: string[] = [];
+        const bmRegex = /《([^》]+)》/g;
+        let bmMatch: RegExpExecArray | null;
+        while ((bmMatch = bmRegex.exec(reply)) !== null) {
+          if (bmMatch[1]) bookmarkMatches.push(bmMatch[1]);
+        }
+        const contextPosts = [
+          ...(likedPosts as any[]),
+          ...(recentPosts as any[]),
+          ...((cuisineTopPosts as { posts: any[] }).posts ?? []),
+        ];
+        const titleToId = new Map<string, number>();
+        for (const p of contextPosts) {
+          if (p.title && p.id) titleToId.set(String(p.title), Number(p.id));
+        }
+        const references = bookmarkMatches
+          .filter(t => titleToId.has(t))
+          .map(t => ({ id: titleToId.get(t)!, title: t }))
+          .filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
+
         // 保存对话记录
         await db.createAiRecommendation({
           userId: user.id,
@@ -572,7 +663,7 @@ ${nearbyLine}
           conversationHistory: JSON.stringify(input.conversationHistory),
         });
 
-        return { reply };
+        return { reply, references };
       }),
 
     getMyRecommendations: protectedProcedure

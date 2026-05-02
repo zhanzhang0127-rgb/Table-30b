@@ -14,6 +14,38 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  references?: { id: number; title: string }[];
+}
+
+function renderWithLinks(
+  content: string,
+  references: { id: number; title: string }[],
+  navigate: (path: string) => void,
+) {
+  const parts = content.split(/(《[^》]+》)/);
+  return (
+    <p className="whitespace-pre-wrap text-sm leading-relaxed">
+      {parts.map((part, i) => {
+        if (part.startsWith('《') && part.endsWith('》')) {
+          const title = part.slice(1, -1);
+          const ref = references.find(r => r.title === title);
+          if (ref) {
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => navigate(`/post/${ref.id}`)}
+                className="text-primary underline underline-offset-2 hover:opacity-75 transition-opacity font-medium"
+              >
+                {part}
+              </button>
+            );
+          }
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </p>
+  );
 }
 
 const QUICK_PROMPTS = [
@@ -52,6 +84,7 @@ export default function AiChat() {
         id: Date.now().toString(),
         role: "assistant",
         content: data.reply,
+        references: data.references,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -205,7 +238,10 @@ export default function AiChat() {
                       : "bg-muted/50 text-foreground"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                  {message.role === "assistant" && message.references && message.references.length > 0
+                    ? renderWithLinks(message.content, message.references, navigate)
+                    : <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                  }
                   <p
                     className={`text-xs mt-2 ${
                       message.role === "user"

@@ -1,4 +1,4 @@
-import { eq, desc, and, count, sql, avg, like, isNotNull } from "drizzle-orm";
+import { eq, desc, and, count, sql, avg, like, isNotNull, SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, posts, restaurants, comments, userProfiles, favorites, aiRecommendations, postLikes, commentLikes } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -16,6 +16,9 @@ type LegacyPostMeta = {
   tasteRating: number | null;
   valueRating: number | null;
   location: string | null;
+  cuisine: string | null;
+  pricePerPerson: string | null;
+  restaurantHint: string | null;
 };
 
 const EMPTY_LEGACY_POST_META: LegacyPostMeta = {
@@ -23,7 +26,29 @@ const EMPTY_LEGACY_POST_META: LegacyPostMeta = {
   tasteRating: null,
   valueRating: null,
   location: null,
+  cuisine: null,
+  pricePerPerson: null,
+  restaurantHint: null,
 };
+
+const VALID_CUISINES = new Set(['面食','火锅','烧烤','小炒家常','日韩料理','西餐快餐','甜品饮品','其他']);
+const VALID_PRICE_RANGES = new Set(['<¥15','¥15-30','¥30-50','¥50-100','>¥100','不想透露']);
+
+function normalizeCuisine(value: unknown): string | null {
+  if (typeof value === 'string' && VALID_CUISINES.has(value)) return value;
+  return null;
+}
+
+function normalizePriceRange(value: unknown): string | null {
+  if (typeof value === 'string' && VALID_PRICE_RANGES.has(value)) return value;
+  return null;
+}
+
+function normalizeRestaurantHint(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 100) : null;
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -83,6 +108,9 @@ function withLegacyPostDefaults<T extends Record<string, unknown>>(rows: T[]): A
   tasteRating: number | null;
   valueRating: number | null;
   location: string | null;
+  cuisine: string | null;
+  pricePerPerson: string | null;
+  restaurantHint: string | null;
 }> {
   return rows.map((row) => {
     const parsed = extractLegacyPostMetaFromContent(row);
@@ -93,6 +121,27 @@ function withLegacyPostDefaults<T extends Record<string, unknown>>(rows: T[]): A
       tasteRating: parsed.tasteRating,
       valueRating: parsed.valueRating,
       location: parsed.location,
+      cuisine: parsed.cuisine,
+      pricePerPerson: parsed.pricePerPerson,
+      restaurantHint: parsed.restaurantHint,
+    };
+  });
+}
+
+// For modern schema: real columns exist for postType/tasteRating/etc., but
+// cuisine/pricePerPerson/restaurantHint live in content metadata. Extract only those.
+function withClassificationMeta<T extends Record<string, unknown>>(rows: T[]): Array<T & {
+  cuisine: string | null;
+  pricePerPerson: string | null;
+  restaurantHint: string | null;
+}> {
+  return rows.map((row) => {
+    const parsed = extractLegacyPostMetaFromContent(row);
+    return {
+      ...row,
+      cuisine: parsed.cuisine,
+      pricePerPerson: parsed.pricePerPerson,
+      restaurantHint: parsed.restaurantHint,
     };
   });
 }
@@ -116,7 +165,8 @@ function normalizeLocation(value: unknown): string | null {
 }
 
 function serializeLegacyPostMeta(content: string | null | undefined, meta: LegacyPostMeta): string | null {
-  const hasMeta = meta.postType || meta.tasteRating || meta.valueRating || meta.location;
+  const hasMeta = meta.postType || meta.tasteRating || meta.valueRating || meta.location
+    || meta.cuisine || meta.pricePerPerson || meta.restaurantHint;
   const base = (content ?? '').trim();
   if (!hasMeta) {
     return base || null;
@@ -135,6 +185,9 @@ function parseLegacyPostMeta(raw: string): LegacyPostMeta {
       tasteRating: normalizeRating(parsed.tasteRating),
       valueRating: normalizeRating(parsed.valueRating),
       location: normalizeLocation(parsed.location),
+      cuisine: normalizeCuisine(parsed.cuisine),
+      pricePerPerson: normalizePriceRange(parsed.pricePerPerson),
+      restaurantHint: normalizeRestaurantHint(parsed.restaurantHint),
     };
   } catch {
     return EMPTY_LEGACY_POST_META;
@@ -147,6 +200,9 @@ function extractLegacyPostMetaFromContent<T extends Record<string, unknown>>(row
   tasteRating: number | null;
   valueRating: number | null;
   location: string | null;
+  cuisine: string | null;
+  pricePerPerson: string | null;
+  restaurantHint: string | null;
 } {
   const contentRaw = row.content;
   if (typeof contentRaw !== 'string') {
@@ -245,25 +301,30 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export type CreatePostInput = typeof posts.$inferInsert & {
+  cuisine?: string | null;
+  pricePerPerson?: string | null;
+  restaurantHint?: string | null;
+};
+
 // Posts queries
-export async function createPost(post: typeof posts.$inferInsert) {
+export async function createPost(post: CreatePostInput) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  const { cuisine = null, pricePerPerson = null, restaurantHint = null, ...postData } = post;
+
   if (!(await hasExtendedPostColumns())) {
     const legacyMeta: LegacyPostMeta = {
-      postType: normalizePostType(post.postType),
-      tasteRating: normalizeRating(post.tasteRating),
-      valueRating: normalizeRating(post.valueRating),
-      location: normalizeLocation(post.location),
+      postType: normalizePostType(postData.postType),
+      tasteRating: normalizeRating(postData.tasteRating),
+      valueRating: normalizeRating(postData.valueRating),
+      location: normalizeLocation(postData.location),
+      cuisine: normalizeCuisine(cuisine),
+      pricePerPerson: normalizePriceRange(pricePerPerson),
+      restaurantHint: normalizeRestaurantHint(restaurantHint),
     };
-    const legacyPost: typeof posts.$inferInsert = {
-      userId: post.userId,
-      title: post.title,
-      content: serializeLegacyPostMeta(post.content ?? null, legacyMeta),
-      images: post.images ?? null,
-      restaurantId: post.restaurantId ?? null,
-      rating: post.rating ?? null,
-    };
+    const contentWithMeta = serializeLegacyPostMeta(postData.content ?? null, legacyMeta);
     return db.execute(sql`
       INSERT INTO posts (
         userId,
@@ -273,16 +334,28 @@ export async function createPost(post: typeof posts.$inferInsert) {
         restaurantId,
         rating
       ) VALUES (
-        ${legacyPost.userId},
-        ${legacyPost.title},
-        ${legacyPost.content},
-        ${legacyPost.images},
-        ${legacyPost.restaurantId},
-        ${legacyPost.rating}
+        ${postData.userId},
+        ${postData.title},
+        ${contentWithMeta},
+        ${postData.images ?? null},
+        ${postData.restaurantId ?? null},
+        ${postData.rating ?? null}
       )
     `);
   }
-  return db.insert(posts).values(post);
+
+  // Modern schema: embed classification in content, insert with real columns
+  const classificationMeta: LegacyPostMeta = {
+    postType: null,
+    tasteRating: null,
+    valueRating: null,
+    location: null,
+    cuisine: normalizeCuisine(cuisine),
+    pricePerPerson: normalizePriceRange(pricePerPerson),
+    restaurantHint: normalizeRestaurantHint(restaurantHint),
+  };
+  const contentWithMeta = serializeLegacyPostMeta(postData.content ?? null, classificationMeta);
+  return db.insert(posts).values({ ...postData, content: contentWithMeta });
 }
 
 export async function getPostsByUserId(userId: number, limit: number = 20, offset: number = 0) {
@@ -324,7 +397,7 @@ export async function getPostsByUserId(userId: number, limit: number = 20, offse
     updatedAt: posts.updatedAt,
     userName: users.name,
   }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.userId, userId)).orderBy(desc(posts.createdAt)).limit(limit).offset(offset);
-  return result;
+  return withClassificationMeta(result);
 }
 
 export type FeedSort = 'latest' | 'hottest';
@@ -332,7 +405,7 @@ export type FeedSort = 'latest' | 'hottest';
 export async function getPostsForFeed(limit: number = 20, offset: number = 0, sort: FeedSort = 'latest') {
   const db = await getDb();
   if (!db) return [];
-  const hotScore = sql<number>`COALESCE(${posts.likes}, 0) + COALESCE(${posts.comments}, 0)`;
+  const hotScore = sql<number>`COALESCE(${posts.likes}, 0) + COALESCE(${posts.comments}, 0) * 2 + COALESCE(${posts.rating}, 0) * 3`;
   const orderByClause = sort === 'hottest'
     ? [desc(hotScore), desc(posts.createdAt)]
     : [desc(posts.createdAt)];
@@ -373,7 +446,7 @@ export async function getPostsForFeed(limit: number = 20, offset: number = 0, so
     updatedAt: posts.updatedAt,
     userName: users.name,
   }).from(posts).leftJoin(users, eq(posts.userId, users.id)).orderBy(...orderByClause).limit(limit).offset(offset);
-  return result;
+  return withClassificationMeta(result);
 }
 
 export async function getPostById(postId: number) {
@@ -417,7 +490,13 @@ export async function getPostById(postId: number) {
     updatedAt: posts.updatedAt,
     userName: users.name,
   }).from(posts).leftJoin(users, eq(posts.userId, users.id)).where(eq(posts.id, postId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  return withClassificationMeta(result)[0];
+}
+
+export async function updatePostContent(postId: number, content: string | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(posts).set({ content: content ?? null }).where(eq(posts.id, postId));
 }
 
 export async function deletePost(postId: number) {
@@ -737,72 +816,183 @@ export async function getUserAiRecommendations(userId: number, limit: number = 1
   return db.select().from(aiRecommendations).where(eq(aiRecommendations.userId, userId)).orderBy(desc(aiRecommendations.createdAt)).limit(limit);
 }
 
-export type RankingDimension = 'overall' | 'hotThisWeek' | 'topRated' | 'bestValue' | 'newlyFamous';
+// ==================== Rankings helpers (post-centric) ====================
 
-// Rankings queries (real-time from posts)
-export async function getRestaurantRankings(dimension: RankingDimension, limit: number = 20) {
+const POST_SELECT_FIELDS = {
+  id: posts.id,
+  userId: posts.userId,
+  title: posts.title,
+  content: posts.content,
+  images: posts.images,
+  rating: posts.rating,
+  likes: posts.likes,
+  comments: posts.comments,
+  createdAt: posts.createdAt,
+  userName: users.name,
+} as const;
+
+type RawPost = {
+  id: number;
+  userId: number;
+  title: string;
+  content: string | null;
+  images: string | null;
+  rating: number | null;
+  likes: number | null;
+  comments: number | null;
+  createdAt: Date;
+  userName: string | null;
+  // Modern schema columns (may be null if legacy)
+  postType?: string | null;
+  tasteRating?: number | null;
+  valueRating?: number | null;
+  location?: string | null;
+};
+
+type RankedPost = {
+  id: number;
+  userId: number;
+  title: string;
+  content: string | null;
+  images: string | null;
+  rating: number | null;
+  postType: string;
+  tasteRating: number | null;
+  valueRating: number | null;
+  location: string | null;
+  likes: number | null;
+  comments: number | null;
+  createdAt: Date;
+  userName: string | null;
+  cuisine: string | null;
+  pricePerPerson: string | null;
+  restaurantHint: string | null;
+};
+
+export type RankingsResult = {
+  posts: RankedPost[];
+  totalCount: number;
+  distinctAuthors: number;
+};
+
+function enrichPost(raw: RawPost): RankedPost {
+  const meta = extractLegacyPostMetaFromContent(raw as Record<string, unknown>);
+  return {
+    id: raw.id,
+    userId: raw.userId,
+    title: raw.title,
+    content: meta.content ?? raw.content,
+    images: raw.images,
+    rating: raw.rating,
+    postType: (raw.postType ?? meta.postType ?? 'dine-in') as string,
+    tasteRating: raw.tasteRating ?? meta.tasteRating,
+    valueRating: raw.valueRating ?? meta.valueRating,
+    location: raw.location ?? meta.location,
+    likes: raw.likes,
+    comments: raw.comments,
+    createdAt: raw.createdAt,
+    userName: raw.userName,
+    cuisine: meta.cuisine,
+    pricePerPerson: meta.pricePerPerson,
+    restaurantHint: meta.restaurantHint,
+  };
+}
+
+function toResult(enriched: RankedPost[], limit: number): RankingsResult {
+  const finalPosts = enriched.slice(0, limit);
+  return {
+    posts: finalPosts,
+    totalCount: enriched.length,
+    distinctAuthors: new Set(finalPosts.map(p => p.userId)).size,
+  };
+}
+
+async function fetchRawPosts(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, extraWhere?: SQL<unknown>): Promise<RawPost[]> {
+  const hasExt = await hasExtendedPostColumns();
+  const extFields = {
+    ...POST_SELECT_FIELDS,
+    postType: posts.postType,
+    tasteRating: posts.tasteRating,
+    valueRating: posts.valueRating,
+    location: posts.location,
+  };
+  const fields = hasExt ? extFields : POST_SELECT_FIELDS;
+  const base = db.select(fields).from(posts).leftJoin(users, eq(posts.userId, users.id));
+  const query = extraWhere ? base.where(extraWhere) : base;
+  return query.limit(100) as unknown as Promise<RawPost[]>;
+}
+
+export async function getWeeklyHotPosts(limit = 5): Promise<RankingsResult> {
   const db = await getDb();
-  if (!db) return [];
-
+  if (!db) return { posts: [], totalCount: 0, distinctAuthors: 0 };
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const raw = await fetchRawPosts(db, sql`${posts.createdAt} >= ${sevenDaysAgo}`);
+  const enriched = raw.map(enrichPost).sort((a, b) => {
+    const scoreA = (a.likes ?? 0) + (a.comments ?? 0) * 2;
+    const scoreB = (b.likes ?? 0) + (b.comments ?? 0) * 2;
+    return scoreB - scoreA || b.createdAt.getTime() - a.createdAt.getTime();
+  });
+  return toResult(enriched, limit);
+}
+
+export async function getTopByTasteRating(limit = 5): Promise<RankingsResult> {
+  const db = await getDb();
+  if (!db) return { posts: [], totalCount: 0, distinctAuthors: 0 };
+  const raw = await fetchRawPosts(db);
+  const enriched = raw.map(enrichPost)
+    .filter(p => (p.tasteRating ?? 0) >= 4)
+    .sort((a, b) => (b.tasteRating ?? 0) - (a.tasteRating ?? 0) || (b.likes ?? 0) - (a.likes ?? 0));
+  return toResult(enriched, limit);
+}
+
+export async function getTopByValueRating(limit = 5, priceRange?: string): Promise<RankingsResult> {
+  const db = await getDb();
+  if (!db) return { posts: [], totalCount: 0, distinctAuthors: 0 };
+  const raw = await fetchRawPosts(db);
+  let enriched = raw.map(enrichPost).filter(p => (p.valueRating ?? 0) >= 4);
+  if (priceRange && priceRange !== '不想透露') {
+    enriched = enriched.filter(p => p.pricePerPerson === priceRange);
+  }
+  enriched.sort((a, b) => (b.valueRating ?? 0) - (a.valueRating ?? 0) || (b.likes ?? 0) - (a.likes ?? 0));
+  return toResult(enriched, limit);
+}
+
+export async function getWarningPosts(limit = 5): Promise<RankingsResult> {
+  const db = await getDb();
+  if (!db) return { posts: [], totalCount: 0, distinctAuthors: 0 };
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const raw = await fetchRawPosts(
+    db,
+    sql`${posts.rating} IS NOT NULL AND ${posts.rating} <= 2 AND ${posts.createdAt} >= ${thirtyDaysAgo}`
+  );
+  const enriched = raw.map(enrichPost);
 
-  const rows = await db
-    .select({
-      id: restaurants.id,
-      name: restaurants.name,
-      cuisine: restaurants.cuisine,
-      address: restaurants.address,
-      priceLevel: restaurants.priceLevel,
-      image: restaurants.image,
-      createdAt: restaurants.createdAt,
-      postCount: count(posts.id),
-      avgRating: avg(posts.rating),
-      weekPosts: sql<number>`SUM(CASE WHEN ${posts.createdAt} >= ${sevenDaysAgo} THEN 1 ELSE 0 END)`,
-    })
-    .from(restaurants)
-    .innerJoin(posts, and(eq(posts.restaurantId, restaurants.id), isNotNull(posts.rating)))
-    .where(eq(restaurants.status, 'published'))
-    .groupBy(restaurants.id);
+  // Group by restaurantHint, keep only groups with >= 2 distinct users
+  const groups = new Map<string, RankedPost[]>();
+  for (const post of enriched) {
+    if (!post.restaurantHint) continue;
+    const key = post.restaurantHint.trim().toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(post);
+  }
+  const eligible: RankedPost[] = [];
+  for (const group of Array.from(groups.values())) {
+    if (new Set(group.map((p: RankedPost) => p.userId)).size >= 2) eligible.push(...group);
+  }
+  eligible.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return toResult(eligible, limit);
+}
 
-  const filtered = rows.filter((row) => {
-    if (dimension === 'bestValue') {
-      return row.priceLevel === '便宜';
-    }
-    if (dimension === 'newlyFamous') {
-      return new Date(row.createdAt) >= thirtyDaysAgo;
-    }
-    return true;
+export async function getPostsByCuisine(cuisine: string, limit = 5): Promise<RankingsResult> {
+  const db = await getDb();
+  if (!db) return { posts: [], totalCount: 0, distinctAuthors: 0 };
+  const raw = await fetchRawPosts(db, like(posts.content, `%"cuisine":"${cuisine}"%`));
+  const enriched = raw.map(enrichPost).sort((a, b) => {
+    const scoreA = (a.likes ?? 0) * 2 + (a.comments ?? 0) + (a.rating ?? 0) * 5;
+    const scoreB = (b.likes ?? 0) * 2 + (b.comments ?? 0) + (b.rating ?? 0) * 5;
+    return scoreB - scoreA;
   });
-
-  const scored = filtered.map((row) => {
-    const avgRatingValue = Number.parseFloat(String(row.avgRating ?? '0'));
-    const postCountValue = Number(row.postCount ?? 0);
-    const weekPostsValue = Number(row.weekPosts ?? 0);
-
-    const avgRatingSafe = Number.isFinite(avgRatingValue) ? avgRatingValue : 0;
-    const postCountSafe = Number.isFinite(postCountValue) ? postCountValue : 0;
-    const weekPostsSafe = Number.isFinite(weekPostsValue) ? weekPostsValue : 0;
-
-    let score = 0;
-    if (dimension === 'overall') score = 0.6 * avgRatingSafe + 0.4 * Math.log(postCountSafe + 1);
-    if (dimension === 'hotThisWeek') score = weekPostsSafe;
-    if (dimension === 'topRated') score = avgRatingSafe;
-    if (dimension === 'bestValue') score = avgRatingSafe;
-    if (dimension === 'newlyFamous') score = avgRatingSafe;
-
-    return {
-      ...row,
-      avgRating: avgRatingSafe,
-      postCount: postCountSafe,
-      weekPosts: weekPostsSafe,
-      score,
-    };
-  });
-
-  return scored
-    .sort((a, b) => b.score - a.score || b.avgRating - a.avgRating || b.postCount - a.postCount)
-    .slice(0, limit);
+  return toResult(enriched, limit);
 }
 
 

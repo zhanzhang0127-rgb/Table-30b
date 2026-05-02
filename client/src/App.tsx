@@ -11,6 +11,7 @@ import Profile from "./pages/Profile";
 import AiChat from "./pages/AiChat";
 import PostDetail from "./pages/PostDetail";
 import Admin from "./pages/Admin";
+import Rankings from "./pages/Rankings";
 import { ResponsiveNav } from "./components/ResponsiveNav";
 
 function Router() {
@@ -21,6 +22,7 @@ function Router() {
       <Route path={"/feed"} component={Feed} />
       <Route path={"/publish"} component={Publish} />
       <Route path={"/profile"} component={Profile} />
+      <Route path={"/rankings"} component={Rankings} />
       <Route path={"/ai-chat"} component={AiChat} />
       <Route path={"/post/:id"} component={PostDetail} />
       <Route path={"/admin"} component={Admin} />

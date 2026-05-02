@@ -57,7 +57,11 @@ Users have three roles: `user`, `admin`, `super_admin`. The user matching `ENV.o
 
 **AI** calls go to Zhipu GLM-4 (`glm-4-flash`) via [server/_core/glm4.ts](server/_core/glm4.ts), keyed by `GLM4_API_KEY`. Only the server holds the key. `invokeGLM4` accepts an optional `responseFormat: { type: 'json_object' }` option for structured JSON extraction.
 
-**Voice-to-post pipeline** (added 2026-04-26): [server/_core/voiceTranscription.ts](server/_core/voiceTranscription.ts) wraps Whisper-1 via Forge API. [server/_core/voicePostExtractor.ts](server/_core/voicePostExtractor.ts) calls GLM-4 in JSON mode to extract `{ title, content, rating, restaurantNameHint, recommendedDish }` from transcribed speech. The `voice` tRPC router exposes `transcribeDirect` (Buffer → Whisper directly, no storage round-trip) and `extractPost`. Frontend entry point: [client/src/pages/Publish.tsx](client/src/pages/Publish.tsx) voice card above the title field.
+**Voice-to-post pipeline** (added 2026-04-26): [server/_core/voiceTranscription.ts](server/_core/voiceTranscription.ts) wraps Whisper-1 via Forge API. [server/_core/voicePostExtractor.ts](server/_core/voicePostExtractor.ts) calls GLM-4 in JSON mode to extract `{ title, content, rating, restaurantNameHint, recommendedDish, cuisine, pricePerPerson }` from transcribed speech. The `voice` tRPC router exposes `transcribeDirect` (Buffer → Whisper directly, no storage round-trip) and `extractPost`. Frontend entry point: [client/src/pages/Publish.tsx](client/src/pages/Publish.tsx) — now a **two-step flow**: Step 1 compose → clicking 「下一步」calls `posts.preview` (GLM-4 sync classification) → Step 2 user reviews AI-prefilled `cuisine` / `pricePerPerson` / `restaurantHint` → submit. A 「极速发」toggle skips Step 2.
+
+**Post classification pipeline** (added 2026-04-30): [server/_core/postClassifier.ts](server/_core/postClassifier.ts) classifies any post into `{ cuisine, pricePerPerson, restaurantHint }` via GLM-4 JSON mode. Called synchronously by `posts.preview` before the user confirms. Shared enums live in [shared/cuisine.ts](shared/cuisine.ts) (8 buckets) and [shared/priceRange.ts](shared/priceRange.ts) (6 price tiers) — imported by both client and server. Classification fields are embedded into `content` via the existing `<!--chileoma-meta:{...}-->` marker (no schema change). Backfill existing posts with `pnpm tsx scripts/backfill-cuisine.ts` (supports `--dry-run`).
+
+**Rankings** (added 2026-04-30): [client/src/pages/Rankings.tsx](client/src/pages/Rankings.tsx) — three-tab UI (综合/类别/警示). Data comes from 5 post-centric helpers in [server/db.ts](server/db.ts): `getWeeklyHotPosts`, `getTopByTasteRating`, `getTopByValueRating`, `getWarningPosts` (≥2 distinct users per restaurantHint to qualify), `getPostsByCuisine` (LIKE filter on metadata). All return `{ posts, totalCount, distinctAuthors }` for the volume-transparency UI principle. The AI chat handler in `aiRecommendations.chat` detects cuisine/price keywords in the user message and injects the corresponding ranking posts into the GLM-4 context.
 
 ## Environment
 
@@ -168,3 +172,10 @@ Demo Day 结束后立即删除以下兜底实现：
 | 2026-04-26 | 共享数据库场景下不执行 `db:push`，改为运行时 schema 兼容（读写回退旧列） | 避免 ALTER 线上共享表结构导致生产风险，同时保证本地开发可继续 |
 | 2026-04-26 | 旧库模式下将 postType/tasteRating/valueRating/location 以内嵌元数据写入 content 并在读取时回填；历史旧帖默认堂食 | 在不改表结构前提下保留新发帖分类语义，消除详情页“未分类”体验问题 |
 | 2026-04-26 | 分析脚本改为前端运行时按 env 条件注入，并在服务端增加 malformed URI 容错 | 解决 `%VITE_ANALYTICS_ENDPOINT%` 占位符未替换导致的噪声报错与终端刷屏 |
+| 2026-04-30 | 排行榜基于帖子聚合而非餐厅 JOIN（删除 `getRestaurantRankings`，新增 5 个帖子聚合 helpers） | 已落地「去餐厅化」决策，餐厅 JOIN 逻辑与产品方向冲突；帖子聚合无需维护商家库 |
+| 2026-04-30 | `cuisine` / `pricePerPerson` / `restaurantHint` 3 个新字段通过扩展 `<!--chileoma-meta:-->` 内嵌于 content，不新增 DB 列 | 生产 DB 共享不可执行 `db:push`；沿用 2026-04-26 的运行时 schema 兼容方案 |
+| 2026-04-30 | 发帖改为两步流程：Step 1 写帖 → 「下一步」触发同步 GLM-4 预填分类 → Step 2 用户校对确认后提交 | AI 自动分类准确率 ~80%，用户校对后 ~98%；移除 fire-and-forget 异步分类，交互主路径一致 |
+| 2026-04-30 | 排行榜三 Tab：综合（本周热门/口味/性价比）/ 类别（8 cuisine 桶）/ 警示（避雷榜） | 综合和类别满足「发现」需求；避雷榜是「去商业化」差异化的最强物质载体（美团结构性不会做） |
+| 2026-04-30 | 避雷榜门槛：同一 restaurantHint ≥2 名不同用户低分帖才上榜 | 防止单次差评误伤；「避雷」语义需要多人独立验证才可信 |
+| 2026-04-30 | 导航从 3 入口扩展为 4 入口（社区 / 排行榜 / AI助手 / 个人） | 排行榜是社区内容沉淀的消费入口，位置在「社区」与「AI助手」之间，符合用户旅程：看帖→看榜→问AI |
+| 2026-04-30 | AI 分类字段的产品级 ROI 不止排行榜，同时注入 AI 助手的意图检测上下文（检测到 cuisine/价格关键词时召回对应榜单） | 一次分类写入，多处消费；即使排行榜数据稀疏，分类元数据长期有价值 |

@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { MessageCircle, Bot, User, Plus, Settings } from "lucide-react";
+import { MessageCircle, Bot, User, Plus, Settings, Trophy } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 
@@ -13,14 +13,13 @@ export function ResponsiveNav() {
 
   const navItems = [
     { href: "/feed", label: "社区", icon: MessageCircle },
+    { href: "/rankings", label: "排行榜", icon: Trophy },
     { href: "/ai-chat", label: "AI助手", icon: Bot },
     { href: "/profile", label: "个人", icon: User },
   ];
 
   const isActive = (href: string) => {
-    if (href === "/feed") {
-      return location === "/feed" || location.startsWith("/post/");
-    }
+    if (href === "/feed") return location === "/feed" || location.startsWith("/post/");
     return location === href;
   };
 

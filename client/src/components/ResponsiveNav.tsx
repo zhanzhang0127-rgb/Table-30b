@@ -2,6 +2,8 @@ import { useLocation } from "wouter";
 import { MessageCircle, Bot, User, Plus, Settings, Trophy } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/contexts/I18nContext";
+import { LanguageToggle } from "@/components/LanguageToggle";
 
 export function ResponsiveNav() {
   const [location, navigate] = useLocation();
@@ -11,11 +13,13 @@ export function ResponsiveNav() {
   // Don't show nav on home/landing page or admin page
   if (location === "/" || location.startsWith("/admin")) return null;
 
+  const { t } = useT();
+
   const navItems = [
-    { href: "/feed", label: "社区", icon: MessageCircle },
-    { href: "/rankings", label: "排行榜", icon: Trophy },
-    { href: "/ai-chat", label: "AI助手", icon: Bot },
-    { href: "/profile", label: "个人", icon: User },
+    { href: "/feed", label: t('nav.feed'), icon: MessageCircle },
+    { href: "/rankings", label: t('nav.rankings'), icon: Trophy },
+    { href: "/ai-chat", label: t('nav.ai'), icon: Bot },
+    { href: "/profile", label: t('nav.profile'), icon: User },
   ];
 
   const isActive = (href: string) => {
@@ -64,6 +68,7 @@ export function ResponsiveNav() {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
+            <LanguageToggle />
             {isAdmin && (
               <Button
                 onClick={() => navigate("/admin")}
@@ -71,7 +76,7 @@ export function ResponsiveNav() {
                 variant="outline"
               >
                 <Settings className="w-4 h-4 mr-1" />
-                管理后台
+                {t('nav.admin')}
               </Button>
             )}
             {isAuthenticated && (
@@ -81,12 +86,31 @@ export function ResponsiveNav() {
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 <Plus className="w-4 h-4 mr-1" />
-                发布
+                {t('nav.publish')}
               </Button>
             )}
           </div>
         </div>
       </nav>
+
+      {/* Mobile Top Bar — logo + language toggle */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-border flex items-center justify-between px-4 h-11">
+        <button
+          onClick={() => navigate("/feed")}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+        >
+          <img
+            src="https://d2xsxph8kpxj0f.cloudfront.net/310519663506480782/XzEWDxgSS5RTJYj5etncA4/chileoma-logo-J5D7zC5YTWiDqDhd7fMXt5.webp"
+            alt="吃了吗"
+            className="h-6 w-6"
+          />
+          <span className="text-base font-bold text-primary">吃了吗</span>
+        </button>
+        <LanguageToggle />
+      </div>
+
+      {/* Mobile top padding for the bar above */}
+      <div className="md:hidden h-11"></div>
 
       {/* Mobile Bottom Navigation */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-border shadow-lg">

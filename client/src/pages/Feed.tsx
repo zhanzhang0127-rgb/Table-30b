@@ -8,7 +8,8 @@ import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { toast } from "sonner";
-import { CUISINE_LABELS, type Cuisine } from "@shared/cuisine";
+import { getCuisineLabel, type Cuisine } from "@shared/cuisine";
+import { useT } from "@/contexts/I18nContext";
 
 export default function Feed() {
   const { isAuthenticated, loading, user } = useAuth();
@@ -61,16 +62,17 @@ export default function Feed() {
   }, [postsData, offset]);
 
   // Like post mutation
+  const { t, lang } = useT();
+
   const likePostMutation = trpc.likes.likePost.useMutation({
     onSuccess: (_, variables) => {
       setLikedPosts(prev => new Set(prev).add(variables));
-      // Update post likes count in local state
-      setAllPosts(prev => prev.map(p => 
+      setAllPosts(prev => prev.map(p =>
         p.id === variables ? { ...p, likes: (p.likes || 0) + 1 } : p
       ));
     },
     onError: (error) => {
-      toast.error("点赞失败：" + error.message);
+      toast.error(t('toast.likeFailed', { error: error.message }));
     },
   });
 
@@ -82,13 +84,12 @@ export default function Feed() {
         newSet.delete(variables);
         return newSet;
       });
-      // Update post likes count in local state
-      setAllPosts(prev => prev.map(p => 
+      setAllPosts(prev => prev.map(p =>
         p.id === variables ? { ...p, likes: Math.max((p.likes || 0) - 1, 0) } : p
       ));
     },
     onError: (error) => {
-      toast.error("取消点赞失败：" + error.message);
+      toast.error(t('toast.unlikeFailed', { error: error.message }));
     },
   });
 
@@ -96,15 +97,15 @@ export default function Feed() {
   const deletePostMutation = trpc.posts.delete.useMutation({
     onSuccess: (_, variables) => {
       setAllPosts(prev => prev.filter(p => p.id !== variables));
-      toast.success("帖子已删除");
+      toast.success(t('toast.postDeleted'));
     },
     onError: (error: any) => {
       if (error.data?.code === "FORBIDDEN") {
-        toast.error("您没有权限删除这个帖子");
+        toast.error(t('toast.noPermission'));
       } else if (error.data?.code === "NOT_FOUND") {
-        toast.error("帖子不存在");
+        toast.error(t('toast.postNotFound'));
       } else {
-        toast.error("删除失败：" + error.message);
+        toast.error(t('toast.deleteFailed', { error: error.message }));
       }
     },
   });
@@ -124,10 +125,10 @@ export default function Feed() {
     e.stopPropagation();
     e.preventDefault();
     if (user?.id !== userId) {
-      toast.error("您没有权限删除这个帖子");
+      toast.error(t('toast.noPermission'));
       return;
     }
-    if (confirm("确定要删除这个帖子吗？")) {
+    if (confirm(lang === 'en' ? 'Delete this post?' : '确定要删除这个帖子吗？')) {
       deletePostMutation.mutate(postId);
     }
   };
@@ -152,14 +153,14 @@ export default function Feed() {
       <main className="container py-6">
         <div className="max-w-2xl mx-auto space-y-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold text-foreground">社区</h1>
+            <h1 className="text-xl font-bold text-foreground">{t('nav.feed')}</h1>
             <Button
               onClick={() => navigate("/publish")}
               size="sm"
               className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5"
             >
               <Plus className="w-4 h-4" />
-              发布
+              {t('nav.publish')}
             </Button>
           </div>
 
@@ -174,7 +175,7 @@ export default function Feed() {
                     : "bg-muted/50 text-foreground/70 hover:bg-muted"
                 }`}
               >
-                最新
+                {t('feed.latest')}
               </button>
               <button
                 type="button"
@@ -185,7 +186,7 @@ export default function Feed() {
                     : "bg-muted/50 text-foreground/70 hover:bg-muted"
                 }`}
               >
-                最热
+                {t('feed.hottest')}
               </button>
             </div>
           </Card>
@@ -239,7 +240,7 @@ export default function Feed() {
                             onClick={(e) => handleDeletePost(post.id, post.userId, e)}
                             disabled={deletePostMutation.isPending}
                             className="p-1.5 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors text-foreground/40"
-                            title="删除帖子"
+                            title={t('feed.deletePost')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -250,7 +251,7 @@ export default function Feed() {
                     {/* Post Content */}
                     {post.postType && (
                       <span className="text-xs text-foreground/45 mb-1 block">
-                        {post.postType === 'delivery' ? '🛵 外卖' : '🍽 堂食'}
+                        {post.postType === 'delivery' ? t('feed.delivery') : t('feed.dineIn')}
                       </span>
                     )}
                     <h3 className="text-base font-bold text-foreground mb-1">{post.title}</h3>
@@ -261,7 +262,7 @@ export default function Feed() {
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {post.cuisine && (
                           <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
-                            {CUISINE_LABELS[post.cuisine as Cuisine] ?? post.cuisine}
+                            {getCuisineLabel(post.cuisine as Cuisine, lang)}
                           </span>
                         )}
                         {post.pricePerPerson && post.pricePerPerson !== '不想透露' && (
@@ -329,16 +330,16 @@ export default function Feed() {
                     disabled={isLoading}
                     variant="outline"
                   >
-                    加载更多
+                    {t('feed.loadMore')}
                   </Button>
                 </div>
               )}
             </>
           ) : (
             <div className="text-center py-12">
-              <p className="text-foreground/60 mb-4">暂无帖子</p>
+              <p className="text-foreground/60 mb-4">{t('feed.emptyTitle')}</p>
               <Button onClick={() => navigate("/publish")} className="bg-primary text-primary-foreground">
-                发布第一条帖子
+                {t('feed.goPublish')}
               </Button>
             </div>
           )}

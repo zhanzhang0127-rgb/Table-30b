@@ -17,3 +17,16 @@ export const PRICE_RANGE_LABELS: Record<PriceRange, string> = {
   '>¥100': '>¥100  奢侈',
   '不想透露': '不想透露',
 };
+
+const PRICE_RANGE_LABELS_EN: Record<PriceRange, string> = {
+  '<¥15': '<¥15  Budget',
+  '¥15-30': '¥15-30  Daily Meals',
+  '¥30-50': '¥30-50  Treat Yourself',
+  '¥50-100': '¥50-100  Dining Out',
+  '>¥100': '>¥100  Splurge',
+  '不想透露': 'Prefer not to say',
+};
+
+export function getPriceRangeLabel(range: PriceRange, lang: 'zh' | 'en' = 'zh'): string {
+  return lang === 'en' ? PRICE_RANGE_LABELS_EN[range] : PRICE_RANGE_LABELS[range];
+}

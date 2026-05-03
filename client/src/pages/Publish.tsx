@@ -9,8 +9,9 @@ import { ImagePlus, Loader2, X, ArrowLeft, Mic, Square, Sparkles, Bike, Utensils
 import { useLocation } from "wouter";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { CUISINES, CUISINE_LABELS, type Cuisine } from "@shared/cuisine";
-import { PRICE_RANGES, PRICE_RANGE_LABELS, type PriceRange } from "@shared/priceRange";
+import { CUISINES, getCuisineLabel, type Cuisine } from "@shared/cuisine";
+import { PRICE_RANGES, getPriceRangeLabel, type PriceRange } from "@shared/priceRange";
+import { useT } from "@/contexts/I18nContext";
 
 const MAX_RECORDING_SECONDS = 60;
 type PostType = "delivery" | "dine-in";
@@ -57,21 +58,22 @@ export default function Publish() {
   const transcribeDirect = trpc.voice.transcribeDirect.useMutation();
   const extractPost = trpc.voice.extractPost.useMutation();
   const previewMutation = trpc.posts.preview.useMutation();
+  const { t, lang } = useT();
 
   const createPostMutation = trpc.posts.create.useMutation({
     onSuccess: () => {
       const labels: string[] = [];
-      if (cuisine) labels.push(CUISINE_LABELS[cuisine]);
+      if (cuisine) labels.push(getCuisineLabel(cuisine, lang));
       if (pricePerPerson && pricePerPerson !== '不想透露') labels.push(pricePerPerson);
       if (labels.length > 0) {
-        toast.success(`发布成功！已进入 🔥 本周热门候选 · ${labels.join(' · ')}`);
+        toast.success(t('toast.publishSuccessRanks', { labels: labels.join(' · ') }));
       } else {
-        toast.success("发布成功！");
+        toast.success(t('toast.publishSuccess'));
       }
       navigate("/feed");
     },
     onError: (error) => {
-      toast.error("发布失败：" + error.message);
+      toast.error(t('toast.publishFailed', { error: error.message }));
     },
   });
 
@@ -97,14 +99,14 @@ export default function Publish() {
     new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error("音频读取失败"));
+      reader.onerror = () => reject(new Error("audio read error"));
       reader.readAsDataURL(blob);
     });
 
   const startVoiceRecording = async () => {
     if (voiceState.kind !== "idle") return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      toast.error("当前浏览器不支持录音");
+      toast.error(t('toast.browserNoRecord'));
       return;
     }
     try {
@@ -138,11 +140,11 @@ export default function Publish() {
       autoStopRef.current = setTimeout(() => {
         if (recorderRef.current?.state === "recording") {
           recorderRef.current.stop();
-          toast.info(`已自动停止（${MAX_RECORDING_SECONDS} 秒上限）`);
+          toast.info(t('toast.recordingLimit', { seconds: MAX_RECORDING_SECONDS }));
         }
       }, MAX_RECORDING_SECONDS * 1000);
     } catch {
-      toast.error("无法访问麦克风，请检查浏览器权限");
+      toast.error(t('toast.micFailed'));
     }
   };
 
@@ -155,7 +157,7 @@ export default function Publish() {
   const processVoiceBlob = async (blob: Blob) => {
     try {
       if (blob.size === 0) {
-        toast.error("没有录到声音");
+        toast.error(t('toast.noAudio'));
         setVoiceState({ kind: "idle" });
         return;
       }
@@ -163,7 +165,7 @@ export default function Publish() {
       const dataUrl = await blobToDataUrl(blob);
       const { text } = await transcribeDirect.mutateAsync({ dataUrl, language: "zh" });
       if (!text.trim()) {
-        toast.error("未识别到语音内容，请重试");
+        toast.error(t('toast.noSpeech'));
         setVoiceState({ kind: "idle" });
         return;
       }
@@ -173,8 +175,8 @@ export default function Publish() {
       setTitle(extracted.title);
       const lines: string[] = [];
       if (extracted.content.trim()) lines.push(extracted.content.trim());
-      if (extracted.restaurantNameHint) lines.push(`📍 提到的餐厅：${extracted.restaurantNameHint}`);
-      if (extracted.recommendedDish) lines.push(`👍 推荐菜：${extracted.recommendedDish}`);
+      if (extracted.restaurantNameHint) lines.push(`📍 ${extracted.restaurantNameHint}`);
+      if (extracted.recommendedDish) lines.push(`👍 ${extracted.recommendedDish}`);
       setContent(lines.join("\n\n"));
 
       // Auto-fill classification from voice extraction
@@ -187,10 +189,10 @@ export default function Publish() {
       if (extracted.restaurantNameHint) setRestaurantHint(extracted.restaurantNameHint);
       setAiPrefilled(true);
 
-      toast.success("已整理，请检查后发布");
+      toast.success(t('toast.voiceReady'));
       setVoiceState({ kind: "idle" });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "AI 整理失败";
+      const message = err instanceof Error ? err.message : t('toast.voiceFailed');
       toast.error(message);
       setVoiceState({ kind: "idle" });
     }
@@ -280,7 +282,7 @@ export default function Publish() {
             </button>
           ))}
         </div>
-        <span className="text-sm text-foreground/60">{value ?? "未评分"}</span>
+        <span className="text-sm text-foreground/60">{value ?? t('publish.notRated')}</span>
       </div>
     </div>
   );
@@ -303,7 +305,7 @@ export default function Publish() {
             className="flex items-center gap-2 text-foreground/60 hover:text-foreground mb-4 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm font-medium">{step === "review" ? "返回修改" : "返回社区"}</span>
+            <span className="text-sm font-medium">{step === "review" ? t('publish.backToEdit') : t('publish.backToFeed')}</span>
           </button>
 
           {/* Step indicator */}
@@ -317,7 +319,7 @@ export default function Publish() {
                 2
               </div>
               <span className="text-xs text-foreground/50 ml-1">
-                {step === 'compose' ? '写帖子' : 'AI 整理 + 发布'}
+                {step === 'compose' ? t('publish.stepCompose') : t('publish.stepReview')}
               </span>
             </div>
           )}
@@ -325,8 +327,8 @@ export default function Publish() {
           {/* Type selection */}
           {postType === null ? (
             <Card className="p-8">
-              <h1 className="text-3xl font-bold text-foreground mb-2">你想分享什么？</h1>
-              <p className="text-sm text-foreground/60 mb-8">先选择发帖类型，我们会为你展示更匹配的字段。</p>
+              <h1 className="text-3xl font-bold text-foreground mb-2">{t('publish.typeTitle')}</h1>
+              <p className="text-sm text-foreground/60 mb-8">{t('publish.typeSubtitle')}</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <button
                   type="button"
@@ -335,9 +337,9 @@ export default function Publish() {
                 >
                   <div className="mb-3 flex items-center gap-2 text-primary">
                     <Bike className="w-5 h-5" />
-                    <span className="text-base font-semibold">外卖</span>
+                    <span className="text-base font-semibold">{t('publish.typeDelivery')}</span>
                   </div>
-                  <p className="text-sm text-foreground/70">分享点外卖的真实体验，帮助同学避坑或种草。</p>
+                  <p className="text-sm text-foreground/70">{t('publish.typeDeliveryDesc')}</p>
                 </button>
                 <button
                   type="button"
@@ -346,9 +348,9 @@ export default function Publish() {
                 >
                   <div className="mb-3 flex items-center gap-2 text-primary">
                     <UtensilsCrossed className="w-5 h-5" />
-                    <span className="text-base font-semibold">堂食</span>
+                    <span className="text-base font-semibold">{t('publish.typeDineIn')}</span>
                   </div>
-                  <p className="text-sm text-foreground/70">记录到店体验，可添加位置标签方便大家定位。</p>
+                  <p className="text-sm text-foreground/70">{t('publish.typeDineInDesc')}</p>
                 </button>
               </div>
             </Card>
@@ -356,23 +358,23 @@ export default function Publish() {
             /* ─── STEP 1: Compose ─── */
             <Card className="p-8">
               <div className="flex items-center justify-between mb-6">
-                <h1 className="text-2xl font-bold text-foreground">分享你的美食故事</h1>
+                <h1 className="text-2xl font-bold text-foreground">{t('publish.composeTitle')}</h1>
                 <button
                   type="button"
                   onClick={() => setQuickMode(q => !q)}
                   className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${quickMode ? 'bg-muted border-border text-foreground/70' : 'border-border text-foreground/40 hover:text-foreground/60'}`}
                 >
                   <Zap className="w-3 h-3" />
-                  {quickMode ? '极速发（标签留空，不进类别榜）' : '极速发'}
+                  {quickMode ? t('publish.quickModeOn') : t('publish.quickModeOff')}
                 </button>
               </div>
 
               <div className="mb-4 flex items-center justify-between rounded-lg border border-border bg-muted/20 px-4 py-3">
                 <span className="text-sm font-semibold text-foreground">
-                  {postType === "delivery" ? "🛵 外卖" : "🍽 堂食"}
+                  {postType === "delivery" ? t('publish.currentTypeDelivery') : t('publish.currentTypeDineIn')}
                 </span>
                 <Button type="button" variant="ghost" size="sm" onClick={() => handleSelectPostType(null)}>
-                  切换
+                  {t('publish.switchType')}
                 </Button>
               </div>
 
@@ -380,10 +382,10 @@ export default function Publish() {
               <div className="mb-6 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-semibold text-foreground">用语音整理你的体验（实验功能）</span>
+                  <span className="text-sm font-semibold text-foreground">{t('publish.voiceCardTitle')}</span>
                 </div>
                 <p className="text-xs text-foreground/60 mb-3">
-                  💡 说话时请说出餐厅的<strong>完整名字</strong>，AI 会更准确地识别。最长 {MAX_RECORDING_SECONDS} 秒。
+                  {t('publish.voiceHint', { seconds: MAX_RECORDING_SECONDS })}
                 </p>
                 <div className="flex items-center gap-3">
                   {voiceState.kind === "idle" && (
@@ -396,11 +398,11 @@ export default function Publish() {
                     <>
                       <Button type="button" variant="destructive" onClick={stopVoiceRecording} className="gap-2">
                         <Square className="w-4 h-4 fill-current" />
-                        停止并整理
+                        {t('publish.voiceStop')}
                       </Button>
                       <span className="flex items-center gap-2 text-sm text-foreground/70">
                         <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                        录音中 {String(Math.floor(voiceState.seconds / 60)).padStart(2, "0")}:
+                        {t('publish.voiceRecording')} {String(Math.floor(voiceState.seconds / 60)).padStart(2, "0")}:
                         {String(voiceState.seconds % 60).padStart(2, "0")}
                       </span>
                     </>
@@ -408,7 +410,7 @@ export default function Publish() {
                   {(voiceState.kind === "transcribing" || voiceState.kind === "extracting") && (
                     <span className="flex items-center gap-2 text-sm text-foreground/70">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {voiceState.kind === "transcribing" ? "语音转文字中..." : "AI 整理中..."}
+                      {voiceState.kind === "transcribing" ? t('publish.voiceTranscribing') : t('publish.voiceExtracting')}
                     </span>
                   )}
                 </div>
@@ -417,57 +419,49 @@ export default function Publish() {
               {/* Title */}
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-foreground mb-2">
-                  标题 * <span className="text-xs text-foreground/50 font-normal">（一句话给出你的核心结论）</span>
+                  {t('publish.titleLabel')} <span className="text-xs text-foreground/50 font-normal">{t('publish.titleHelper')}</span>
                 </label>
                 <Input
-                  placeholder={postType === 'delivery'
-                    ? "如：万达麦当劳外卖到得挺快，但薯条全软了"
-                    : "如：兰州拉面馆的牛肉面，比东路那家鲜 / 海底捞踩雷，等位 1 小时还涨价"}
+                  placeholder={postType === 'delivery' ? t('publish.titlePlaceholderDelivery') : t('publish.titlePlaceholderDineIn')}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   maxLength={100}
                   className="bg-muted/50 border-border"
                 />
-                <p className="text-xs text-foreground/50 mt-1">{title.length}/100 字符</p>
+                <p className="text-xs text-foreground/50 mt-1">{t('publish.titleCharCount', { count: title.length })}</p>
               </div>
 
               {/* Content */}
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-foreground mb-2">
-                  内容 *
+                  {t('publish.contentLabel')}
                   <span className="text-xs text-foreground/50 font-normal ml-1">
-                    {postType === 'delivery'
-                      ? "（写真实细节最有用：什么时候点的、配送多久、份量、保温、有没有踩坑）"
-                      : "（写真实细节最有用：什么时候去的、几个人、点了什么、环境/服务怎样）"}
+                    {postType === 'delivery' ? t('publish.contentHelperDelivery') : t('publish.contentHelperDineIn')}
                   </span>
                 </label>
                 <Textarea
-                  placeholder={postType === 'delivery'
-                    ? "周二中午点的，配送 35 分钟，到的时候还热乎。\n份量比想象中大，¥18 一份性价比还行。\n但米饭有点少，建议加米饭。"
-                    : "周三晚上 7 点和室友去的，等位 20 分钟。\n点了牛肉面和炸酱面，牛肉面的汤是真材实料炖的...\n服务员态度一般，但出餐很快。"}
+                  placeholder={postType === 'delivery' ? t('publish.contentPlaceholderDelivery') : t('publish.contentPlaceholderDineIn')}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   maxLength={1000}
                   className="bg-muted/50 border-border min-h-40 resize-none"
                 />
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-xs text-foreground/40">
-                    💡 别担心写不完整 — 下一步 AI 会自动从你的内容里提取「菜系 / 价格 / 推荐菜」标签
-                  </p>
+                  <p className="text-xs text-foreground/40">{t('publish.aiExtractionHint')}</p>
                   <p className="text-xs text-foreground/50 ml-3 flex-shrink-0">{content.length}/1000</p>
                 </div>
               </div>
 
-              {renderRatingRow("口味评分", tasteRating, setTasteRating)}
-              {renderRatingRow("性价比评分", valueRating, setValueRating)}
+              {renderRatingRow(t('publish.ratingTaste'), tasteRating, setTasteRating)}
+              {renderRatingRow(t('publish.ratingValue'), valueRating, setValueRating)}
 
               {postType === "dine-in" && (
                 <div className="mb-6 rounded-lg border border-border bg-muted/20 p-4">
-                  <label className="mb-2 block text-sm font-semibold text-foreground">📍 位置标签（可选）</label>
+                  <label className="mb-2 block text-sm font-semibold text-foreground">{t('publish.locationLabel')}</label>
                   <Input
                     value={manualLocation}
                     onChange={(e) => setManualLocation(e.target.value)}
-                    placeholder="可手动输入位置，或点击获取当前位置"
+                    placeholder={t('publish.locationPlaceholder')}
                     className="bg-background"
                   />
                   <div className="mt-3 flex items-center gap-2">
@@ -479,11 +473,11 @@ export default function Publish() {
                       disabled={locationLoading}
                     >
                       {locationLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                      {locationLoading ? "定位中..." : "获取位置"}
+                      {locationLoading ? t('publish.locationGetting') : t('publish.locationGet')}
                     </Button>
                     {manualLocation.trim() && (
                       <Button type="button" variant="ghost" onClick={() => { clearLocation(); setManualLocation(""); }}>
-                        清空
+                        {t('publish.locationClear')}
                       </Button>
                     )}
                   </div>
@@ -492,7 +486,7 @@ export default function Publish() {
 
               {/* Images */}
               <div className="mb-8">
-                <label className="block text-sm font-semibold text-foreground mb-2">上传图片（最多9张）</label>
+                <label className="block text-sm font-semibold text-foreground mb-2">{t('publish.imagesLabel')}</label>
                 {images.length > 0 && (
                   <div className="grid grid-cols-3 gap-3 mb-4">
                     {images.map((img, idx) => (
@@ -514,8 +508,8 @@ export default function Publish() {
                     <input type="file" multiple accept="image/*" onChange={handleImageUpload} className="hidden" />
                     <div className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors">
                       <ImagePlus className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                      <p className="text-sm font-medium text-foreground">点击或拖拽上传图片</p>
-                      <p className="text-xs text-muted-foreground">支持 JPG、PNG、WebP 格式</p>
+                      <p className="text-sm font-medium text-foreground">{t('publish.imagesClick')}</p>
+                      <p className="text-xs text-muted-foreground">{t('publish.imagesFormats')}</p>
                     </div>
                   </label>
                 )}
@@ -530,7 +524,7 @@ export default function Publish() {
                     className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
                   >
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {isSubmitting ? "发布中..." : "⚡ 极速发布"}
+                    {isSubmitting ? t('publish.submitting') : t('publish.quickSubmitBtn')}
                   </Button>
                 ) : (
                   <Button
@@ -541,29 +535,29 @@ export default function Publish() {
                     {previewMutation.isPending ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        AI 整理中...
+                        {t('publish.nextBtnLoading')}
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        下一步
+                        {t('publish.nextBtn')}
                       </>
                     )}
                   </Button>
                 )}
                 <Button variant="outline" onClick={() => navigate("/feed")} disabled={isSubmitting}>
-                  取消
+                  {t('publish.cancelBtn')}
                 </Button>
               </div>
             </Card>
           ) : (
             /* ─── STEP 2: Review + Publish ─── */
             <Card className="p-8">
-              <h1 className="text-2xl font-bold text-foreground mb-2">AI 已整理，请校对后发布</h1>
+              <h1 className="text-2xl font-bold text-foreground mb-2">{t('publish.reviewTitle')}</h1>
               {aiPrefilled && (
                 <p className="text-xs text-primary/70 mb-6 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" />
-                  以下信息由 AI 根据你的内容推测，可自由修改
+                  {t('publish.aiPrefillNote')}
                 </p>
               )}
 
@@ -572,7 +566,7 @@ export default function Publish() {
                 <p className="font-semibold text-foreground line-clamp-1">{title}</p>
                 <p className="text-foreground/60 text-xs line-clamp-2">{content}</p>
                 <div className="flex gap-3 text-xs text-foreground/50 pt-1">
-                  <span>{postType === 'delivery' ? '🛵 外卖' : '🍽 堂食'}</span>
+                  <span>{postType === 'delivery' ? t('feed.delivery') : t('feed.dineIn')}</span>
                   <span>😋 {tasteRating}</span>
                   <span>💰 {valueRating}</span>
                   {manualLocation && <span>📍 {manualLocation}</span>}
@@ -582,8 +576,8 @@ export default function Publish() {
               {/* Cuisine selection */}
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-foreground mb-2">
-                  美食类别
-                  {aiPrefilled && cuisine && <span className="ml-2 text-xs text-primary/60 font-normal">AI 推测</span>}
+                  {t('publish.cuisineLabel')}
+                  {aiPrefilled && cuisine && <span className="ml-2 text-xs text-primary/60 font-normal">{t('publish.aiTag')}</span>}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {CUISINES.map(c => (
@@ -593,7 +587,7 @@ export default function Publish() {
                       onClick={() => setCuisine(c === cuisine ? null : c)}
                       className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${cuisine === c ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-foreground/60 hover:border-foreground/30'}`}
                     >
-                      {CUISINE_LABELS[c]}
+                      {getCuisineLabel(c, lang)}
                     </button>
                   ))}
                 </div>
@@ -602,8 +596,8 @@ export default function Publish() {
               {/* Price selection */}
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-foreground mb-2">
-                  人均消费
-                  {aiPrefilled && pricePerPerson && <span className="ml-2 text-xs text-primary/60 font-normal">AI 推测</span>}
+                  {t('publish.priceLabel')}
+                  {aiPrefilled && pricePerPerson && <span className="ml-2 text-xs text-primary/60 font-normal">{t('publish.aiTag')}</span>}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {PRICE_RANGES.map(range => (
@@ -613,7 +607,7 @@ export default function Publish() {
                       onClick={() => setPricePerPerson(range === pricePerPerson ? null : range)}
                       className={`text-sm px-3 py-2 rounded-lg border text-left transition-colors ${pricePerPerson === range ? 'bg-green-600 text-white border-green-600' : 'border-border text-foreground/60 hover:border-foreground/30'}`}
                     >
-                      {PRICE_RANGE_LABELS[range]}
+                      {getPriceRangeLabel(range, lang)}
                     </button>
                   ))}
                 </div>
@@ -622,11 +616,11 @@ export default function Publish() {
               {/* Restaurant hint */}
               <div className="mb-8">
                 <label className="block text-sm font-semibold text-foreground mb-2">
-                  店名提示（选填）
-                  {aiPrefilled && restaurantHint && <span className="ml-2 text-xs text-primary/60 font-normal">AI 推测</span>}
+                  {t('publish.restaurantHintLabel')}
+                  {aiPrefilled && restaurantHint && <span className="ml-2 text-xs text-primary/60 font-normal">{t('publish.aiTag')}</span>}
                 </label>
                 <Input
-                  placeholder="如：海底捞万达店"
+                  placeholder={t('publish.restaurantHintPlaceholder')}
                   value={restaurantHint}
                   onChange={e => setRestaurantHint(e.target.value)}
                   maxLength={100}
@@ -641,10 +635,10 @@ export default function Publish() {
                   className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
                 >
                   {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {isSubmitting ? "发布中..." : "发布"}
+                  {isSubmitting ? t('publish.submitting') : t('publish.submitBtn')}
                 </Button>
                 <Button variant="outline" onClick={() => setStep("compose")} disabled={isSubmitting}>
-                  返回修改
+                  {t('publish.backToEdit')}
                 </Button>
               </div>
             </Card>
@@ -652,12 +646,12 @@ export default function Publish() {
 
           {/* Tips */}
           <Card className="mt-8 p-6 bg-muted/30 border-0">
-            <h3 className="font-semibold text-foreground mb-3">💡 分享小贴士</h3>
+            <h3 className="font-semibold text-foreground mb-3">{t('publish.tipsTitle')}</h3>
             <ul className="space-y-2 text-sm text-foreground/70">
-              <li>• 发布后你的帖子会自动进入排行榜候选</li>
-              <li>• 填写类别和人均价格，帮助同学更快找到你的推荐</li>
-              <li>• 口味和性价比双评分，让你的评价更有参考价值</li>
-              <li>• 遵守社区规则，不发布不当内容</li>
+              <li>• {t('publish.tip1')}</li>
+              <li>• {t('publish.tip2')}</li>
+              <li>• {t('publish.tip3')}</li>
+              <li>• {t('publish.tip4')}</li>
             </ul>
           </Card>
         </div>

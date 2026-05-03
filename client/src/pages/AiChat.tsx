@@ -8,6 +8,7 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocationPicker } from "@/hooks/useLocationPicker";
 import { toast } from "sonner";
+import { useT } from "@/contexts/I18nContext";
 
 interface Message {
   id: string;
@@ -48,16 +49,12 @@ function renderWithLinks(
   );
 }
 
-const QUICK_PROMPTS = [
-  "根据我的口味推荐几家餐厅",
-  "附近有什么好吃的？",
-  "平台上最近有什么热门美食？",
-  "帮我推荐适合约会的餐厅",
-];
+// QUICK_PROMPTS are now dynamic via useT() — see component body
 
 export default function AiChat() {
   const { isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
+  const { t, lang } = useT();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -124,7 +121,7 @@ export default function AiChat() {
     const sysMsg: Message = {
       id: `loc-${Date.now()}`,
       role: "assistant",
-      content: `📍 ${locMsg}\n\n现在你可以问我「附近有什么好吃的」，我会根据你的实时位置推荐附近餐厅！`,
+      content: t('aiChat.locationShared', { msg: locMsg }),
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, sysMsg]);
@@ -132,7 +129,7 @@ export default function AiChat() {
 
   const handleClearLocation = () => {
     clearLocation();
-    toast("已关闭位置共享");
+    toast(t('toast.locationCleared'));
   };
 
   const sendMessage = (text: string) => {
@@ -153,8 +150,9 @@ export default function AiChat() {
 
     chatMutation.mutate({
       message: text,
-      conversationHistory: newHistory.slice(0, -1), // 不包含当前消息，已单独传入 message
+      conversationHistory: newHistory.slice(0, -1),
       userLocation: userLocation ?? undefined,
+      lang,
     });
   };
 
@@ -180,13 +178,12 @@ export default function AiChat() {
               </div>
               <div>
                 <h1 className="font-bold text-foreground flex items-center gap-2">
-                  AI 美食助手
+                  {t('aiChat.title')}
                   <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
-                    GLM-4 驱动
+                    {t('aiChat.subtitle')}
                   </span>
                 </h1>
-                <p className="text-xs text-foreground/60">基于你的收藏和喜好，提供个性化美食推荐</p>
               </div>
             </div>
 
@@ -198,9 +195,8 @@ export default function AiChat() {
               >
                 <MapPin className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">
-                  {userLocation.address ? userLocation.address.slice(0, 10) + "…" : "位置已共享"}
+                  {userLocation.address ? userLocation.address.slice(0, 10) + "…" : t('aiChat.clearLocation')}
                 </span>
-                <span className="sm:hidden">已定位</span>
               </button>
             ) : (
               <button
@@ -213,7 +209,7 @@ export default function AiChat() {
                 ) : (
                   <MapPinOff className="w-3.5 h-3.5" />
                 )}
-                <span>{locationLoading ? "定位中…" : "📍 获取我的位置"}</span>
+                <span>{locationLoading ? "…" : t('aiChat.getLocation')}</span>
               </button>
             )}
           </div>
@@ -274,7 +270,7 @@ export default function AiChat() {
                     <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" />
                     <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.15s" }} />
                     <div className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0.3s" }} />
-                    <span className="text-xs text-foreground/50 ml-1">AI 思考中…</span>
+                    <span className="text-xs text-foreground/50 ml-1">{t('aiChat.thinking')}</span>
                   </div>
                 </Card>
               </div>
@@ -286,7 +282,7 @@ export default function AiChat() {
           {/* Quick prompts - show only at start */}
           {messages.length <= 1 && (
             <div className="flex flex-wrap gap-2 mb-3">
-              {QUICK_PROMPTS.map((prompt) => (
+              {[t('aiChat.quickPrompt1'), t('aiChat.quickPrompt2'), t('aiChat.quickPrompt3'), t('aiChat.quickPrompt4')].map((prompt) => (
                 <button
                   key={prompt}
                   onClick={() => sendMessage(prompt)}
@@ -302,7 +298,7 @@ export default function AiChat() {
           {/* Input Area */}
           <div className="flex gap-2">
             <Input
-              placeholder={userLocation ? "问我附近有什么好吃的…" : "问我任何关于美食的问题…"}
+              placeholder={userLocation ? t('aiChat.placeholderWithLocation') : t('aiChat.placeholder')}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -328,9 +324,7 @@ export default function AiChat() {
             </Button>
           </div>
           <p className="text-xs text-foreground/40 text-center mt-2">
-            {userLocation
-              ? `📍 正在共享位置 · AI 回复仅供参考`
-              : "AI 回复仅供参考，实际用餐体验以餐厅现场为准"}
+            {userLocation ? "📍" : ""} AI {lang === 'en' ? 'replies are for reference only' : '回复仅供参考'}
           </p>
         </div>
       </main>

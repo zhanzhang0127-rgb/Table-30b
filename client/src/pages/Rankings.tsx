@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Sprout, AlertTriangle, Flame, Star, Coins, ChevronRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
-import { CUISINES, CUISINE_LABELS, type Cuisine } from "@shared/cuisine";
+import { CUISINES, getCuisineLabel, type Cuisine } from "@shared/cuisine";
 import { PRICE_RANGES, type PriceRange } from "@shared/priceRange";
+import { useT } from "@/contexts/I18nContext";
 
 type MainTab = "general" | "category" | "warning";
 type GeneralSection = "weeklyHot" | "taste" | "value";
@@ -140,13 +141,14 @@ function RankingSection({
   emptyMessage: string;
   emptyCtaHref?: string;
 }) {
+  const { t } = useT();
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-3">
         {icon}
         <h2 className="font-bold text-foreground">{title}</h2>
         {posts && posts.length > 0 && (
-          <span className="text-xs text-foreground/40 ml-auto">基于 {posts.length} 条评价</span>
+          <span className="text-xs text-foreground/40 ml-auto">{t('rankings.basedOn', { count: posts.length })}</span>
         )}
       </div>
       {isLoading ? (
@@ -162,7 +164,7 @@ function RankingSection({
           ))}
         </div>
       ) : (
-        <EmptyState message={emptyMessage} cta="去发帖" ctaHref={emptyCtaHref} navigate={navigate} />
+        <EmptyState message={emptyMessage} cta={t('rankings.goPost')} ctaHref={emptyCtaHref} navigate={navigate} />
       )}
       {posts && posts.length > 0 && (
         <div className="mt-3 text-center">
@@ -171,7 +173,7 @@ function RankingSection({
             onClick={() => navigate("/publish")}
             className="text-xs text-foreground/40 hover:text-foreground/60 transition-colors"
           >
-            🌱 这个榜单还在生长 — 添加你的推荐 →
+            {t('rankings.growingCta')}
           </button>
         </div>
       )}
@@ -181,6 +183,7 @@ function RankingSection({
 
 function GeneralTab({ navigate }: { navigate: (path: string) => void }) {
   const [priceFilter, setPriceFilter] = useState<PriceRange | undefined>(undefined);
+  const { t } = useT();
 
   const weeklyHot = trpc.rankings.getByDimension.useQuery({ dimension: 'weeklyHot', limit: 5 });
   const taste = trpc.rankings.getByDimension.useQuery({ dimension: 'taste', limit: 5 });
@@ -189,29 +192,29 @@ function GeneralTab({ navigate }: { navigate: (path: string) => void }) {
   return (
     <div>
       <RankingSection
-        title="本周热门"
+        title={t('rankings.sectionWeeklyHot')}
         icon={<Flame className="w-4 h-4 text-orange-500" />}
         posts={weeklyHot.data?.posts}
         isLoading={weeklyHot.isLoading}
         navigate={navigate}
-        emptyMessage="这周大家都还很安静 — 你的故事会被看见"
+        emptyMessage={t('rankings.emptyWeeklyHot')}
       />
       <RankingSection
-        title="口味榜"
+        title={t('rankings.sectionTaste')}
         icon={<Star className="w-4 h-4 text-yellow-500" />}
         posts={taste.data?.posts}
         isLoading={taste.isLoading}
         navigate={navigate}
-        emptyMessage="还没有高口味评分的帖子 — 发现了好吃的就分享吧"
+        emptyMessage={t('rankings.emptyTaste')}
       />
 
       {/* Value ranking with price filter */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-3">
           <Coins className="w-4 h-4 text-green-600" />
-          <h2 className="font-bold text-foreground">性价比榜</h2>
+          <h2 className="font-bold text-foreground">{t('rankings.sectionValue')}</h2>
           {value.data?.posts && value.data.posts.length > 0 && (
-            <span className="text-xs text-foreground/40 ml-auto">基于 {value.data.posts.length} 条</span>
+            <span className="text-xs text-foreground/40 ml-auto">{t('rankings.basedOn', { count: value.data.posts.length })}</span>
           )}
         </div>
         {/* Price filter chips */}
@@ -221,7 +224,7 @@ function GeneralTab({ navigate }: { navigate: (path: string) => void }) {
             onClick={() => setPriceFilter(undefined)}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!priceFilter ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-foreground/60 hover:border-foreground/30'}`}
           >
-            全部
+            {t('rankings.priceAll')}
           </button>
           {(['<¥15', '¥15-30', '¥30-50'] as PriceRange[]).map(range => (
             <button
@@ -244,8 +247,8 @@ function GeneralTab({ navigate }: { navigate: (path: string) => void }) {
           </div>
         ) : (
           <EmptyState
-            message={priceFilter ? `${priceFilter} 档还没有高性价比记录 — 你来开第一条？` : "还没有高性价比评分的帖子"}
-            cta="去发帖"
+            message={priceFilter ? t('rankings.emptyValueRange', { range: priceFilter }) : t('rankings.emptyValue')}
+            cta={t('rankings.goPost')}
             ctaHref="/publish"
             navigate={navigate}
           />
@@ -253,7 +256,7 @@ function GeneralTab({ navigate }: { navigate: (path: string) => void }) {
         {value.data?.posts && value.data.posts.length > 0 && (
           <div className="mt-3 text-center">
             <button type="button" onClick={() => navigate("/publish")} className="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">
-              🌱 这个榜单还在生长 — 添加你的推荐 →
+              {t('rankings.growingCta')}
             </button>
           </div>
         )}
@@ -264,6 +267,7 @@ function GeneralTab({ navigate }: { navigate: (path: string) => void }) {
 
 function CategoryTab({ navigate }: { navigate: (path: string) => void }) {
   const [selectedCuisine, setSelectedCuisine] = useState<Cuisine>(CUISINES[0]);
+  const { t, lang } = useT();
   const cuisinePosts = trpc.rankings.getByDimension.useQuery({
     dimension: 'cuisine',
     cuisine: selectedCuisine,
@@ -281,16 +285,16 @@ function CategoryTab({ navigate }: { navigate: (path: string) => void }) {
             onClick={() => setSelectedCuisine(c)}
             className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${selectedCuisine === c ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-foreground/60 hover:border-foreground/30'}`}
           >
-            {CUISINE_LABELS[c]}
+            {getCuisineLabel(c, lang)}
           </button>
         ))}
       </div>
 
       {/* Posts for selected cuisine */}
       <div className="flex items-center justify-between mb-3">
-        <h2 className="font-bold text-foreground">{CUISINE_LABELS[selectedCuisine]} 热门</h2>
+        <h2 className="font-bold text-foreground">{t('rankings.categoryHot', { label: getCuisineLabel(selectedCuisine, lang) })}</h2>
         {cuisinePosts.data?.posts && cuisinePosts.data.posts.length > 0 && (
-          <span className="text-xs text-foreground/40">基于 {cuisinePosts.data.posts.length} 条</span>
+          <span className="text-xs text-foreground/40">{t('rankings.basedOn', { count: cuisinePosts.data.posts.length })}</span>
         )}
       </div>
 
@@ -305,14 +309,14 @@ function CategoryTab({ navigate }: { navigate: (path: string) => void }) {
           </div>
           <div className="mt-3 text-center">
             <button type="button" onClick={() => navigate("/publish")} className="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">
-              🌱 这个榜单还在生长 — 添加你的推荐 →
+              {t('rankings.growingCta')}
             </button>
           </div>
         </>
       ) : (
         <EmptyState
-          message={`本周还没人推荐过 ${CUISINE_LABELS[selectedCuisine]} — 成为第一个吧`}
-          cta="去发帖"
+          message={t('rankings.emptyCategory', { label: getCuisineLabel(selectedCuisine, lang) })}
+          cta={t('rankings.goPost')}
           ctaHref="/publish"
           navigate={navigate}
         />
@@ -323,13 +327,12 @@ function CategoryTab({ navigate }: { navigate: (path: string) => void }) {
 
 function WarningTab({ navigate }: { navigate: (path: string) => void }) {
   const warning = trpc.rankings.getByDimension.useQuery({ dimension: 'warning', limit: 5 });
+  const { t } = useT();
 
   return (
     <div>
       <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
-        <p className="text-xs text-amber-700 leading-relaxed">
-          ⚠️ 此榜单收录近 30 天内至少 2 位不同同学独立打差评的地方，仅供参考。出现在此 ≠ 一定踩雷，请结合原帖判断。
-        </p>
+        <p className="text-xs text-amber-700 leading-relaxed">{t('rankings.warningDisclaimer')}</p>
       </div>
 
       {warning.isLoading ? (
@@ -338,8 +341,8 @@ function WarningTab({ navigate }: { navigate: (path: string) => void }) {
         <>
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <h2 className="font-bold text-foreground">近期差评聚合</h2>
-            <span className="text-xs text-foreground/40 ml-auto">基于 {warning.data.posts.length} 条</span>
+            <h2 className="font-bold text-foreground">{t('rankings.warningTitle')}</h2>
+            <span className="text-xs text-foreground/40 ml-auto">{t('rankings.basedOn', { count: warning.data.posts.length })}</span>
           </div>
           <div className="space-y-2">
             {warning.data.posts.map((post, i) => (
@@ -350,14 +353,14 @@ function WarningTab({ navigate }: { navigate: (path: string) => void }) {
       ) : (
         <div className="text-center py-12">
           <span className="text-4xl mb-4 block">✨</span>
-          <p className="text-sm font-medium text-foreground/70 mb-2">太仓校园食客都很 nice</p>
-          <p className="text-xs text-foreground/45 mb-5">最近没有多次差评记录</p>
+          <p className="text-sm font-medium text-foreground/70 mb-2">{t('rankings.warningEmptyTitle')}</p>
+          <p className="text-xs text-foreground/45 mb-5">{t('rankings.warningEmptySubtitle')}</p>
           <button
             type="button"
             onClick={() => navigate("/publish")}
             className="text-xs text-foreground/40 hover:text-foreground/60 border border-border rounded-full px-4 py-2 transition-colors"
           >
-            如果你踩雷了，请帮同学避坑 →
+            {t('rankings.warningEmptyCta')}
           </button>
         </div>
       )}
@@ -368,11 +371,12 @@ function WarningTab({ navigate }: { navigate: (path: string) => void }) {
 export default function Rankings() {
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<MainTab>("general");
+  const { t } = useT();
 
   const tabs: Array<{ value: MainTab; label: string }> = [
-    { value: "general", label: "综合" },
-    { value: "category", label: "类别" },
-    { value: "warning", label: "⚠️ 警示" },
+    { value: "general", label: t('rankings.tabGeneral') },
+    { value: "category", label: t('rankings.tabCategory') },
+    { value: "warning", label: t('rankings.tabWarning') },
   ];
 
   return (
@@ -382,11 +386,9 @@ export default function Rankings() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Sprout className="w-6 h-6 text-green-500" />
-            这周校园在吃
+            {t('rankings.pageTitle')}
           </h1>
-          <p className="text-sm text-foreground/50 mt-1">
-            社区真实评价 · 无商家入驻 · 无付费推广
-          </p>
+          <p className="text-sm text-foreground/50 mt-1">{t('rankings.subtitle')}</p>
         </div>
 
         {/* Tabs */}

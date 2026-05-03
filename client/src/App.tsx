@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { I18nProvider } from "@/contexts/I18nContext";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -41,16 +42,18 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
-        <TooltipProvider>
-          <Toaster />
-          <ResponsiveNav />
-          <Router />
-        </TooltipProvider>
-      </ThemeProvider>
+      <I18nProvider>
+        <ThemeProvider
+          defaultTheme="light"
+          // switchable
+        >
+          <TooltipProvider>
+            <Toaster />
+            <ResponsiveNav />
+            <Router />
+          </TooltipProvider>
+        </ThemeProvider>
+      </I18nProvider>
     </ErrorBoundary>
   );
 }

@@ -518,12 +518,12 @@ export const appRouter = router({
           role: z.enum(['user', 'assistant']),
           content: z.string(),
         })).default([]),
-        // 用户实时位置（可选）
         userLocation: z.object({
           latitude: z.number(),
           longitude: z.number(),
           address: z.string().optional(),
         }).optional(),
+        lang: z.enum(['zh', 'en']).default('zh'),
       }))
       .mutation(async ({ ctx, input }) => {
         const user = ctx.user;
@@ -617,11 +617,11 @@ ${budgetLine}
 5. 帮助用户分析饮食偏好
 
 回复要求：
-- 用中文回复，语气友好自然
-- 推荐附近餐厅时说明距离和推荐理由
-- 引用社区帖子时用书名号（《帖子标题》）
-- 回复简洁，不超过350字
-- 非美食相关问题礼貌引导回美食话题`;
+- ${input.lang === 'en' ? 'Reply in English, friendly and natural tone' : '用中文回复，语气友好自然'}
+- ${input.lang === 'en' ? 'Mention distance and reason when recommending nearby restaurants' : '推荐附近餐厅时说明距离和推荐理由'}
+- ${input.lang === 'en' ? 'Cite community posts using 《title》 format' : '引用社区帖子时用书名号（《帖子标题》）'}
+- ${input.lang === 'en' ? 'Keep replies concise, under 350 words' : '回复简洁，不超过350字'}
+- ${input.lang === 'en' ? 'Politely redirect non-food questions back to food topics' : '非美食相关问题礼貌引导回美食话题'}`;
 
         const messages: GLM4Message[] = [
           { role: 'system', content: systemPrompt },

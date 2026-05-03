@@ -179,3 +179,9 @@ Demo Day 结束后立即删除以下兜底实现：
 | 2026-04-30 | 避雷榜门槛：同一 restaurantHint ≥2 名不同用户低分帖才上榜 | 防止单次差评误伤；「避雷」语义需要多人独立验证才可信 |
 | 2026-04-30 | 导航从 3 入口扩展为 4 入口（社区 / 排行榜 / AI助手 / 个人） | 排行榜是社区内容沉淀的消费入口，位置在「社区」与「AI助手」之间，符合用户旅程：看帖→看榜→问AI |
 | 2026-04-30 | AI 分类字段的产品级 ROI 不止排行榜，同时注入 AI 助手的意图检测上下文（检测到 cuisine/价格关键词时召回对应榜单） | 一次分类写入，多处消费；即使排行榜数据稀疏，分类元数据长期有价值 |
+| 2026-05-03 | 修隐性数据丢失 bug：feed/getPostById 的 modern schema 路径加 `withClassificationMeta` 后处理，从 content metadata 提取 cuisine/pricePerPerson/restaurantHint | modern schema 路径只 SELECT 真实列，新字段只写 metadata 不写列，不后处理则永远 undefined |
+| 2026-05-03 | 最热排序从 `likes + comments` 改为 `likes + comments×2 + rating×3` | 评论成本 > 点赞（×2 反映质量信号）；rating×3 让高质量新帖也能露出，5 星 + 0 互动 = 15 分 |
+| 2026-05-03 | AI 回复中 `《标题》` 变可点击链接：服务端后处理提取书名号 + 反查 post ID → 返回 `references[]`，前端 `renderWithLinks` 替换为按钮 | AI 提到帖子但无跳转 = 死链，推荐「最后一公里」断裂；只匹配上下文池中的帖子防止幻觉链接 |
+| 2026-05-03 | i18n 选型：手写 Context + JSON 字典（不引入 react-i18next） | 仅 2 种语言 ~120 字符串，i18next 是杀鸡用牛刀；手写 ~80 行，`en: Translations` TypeScript 约束，漏译报错 |
+| 2026-05-03 | 手机端新增顶部 bar（`md:hidden h-11`）放 logo + LanguageToggle | 底部 4 导航无空间放语言切换；顶部 bar 方案最轻量，不影响导航布局，logo 也可点击跳回社区 |
+| 2026-05-03 | `aiRecommendations.chat` 新增 `lang` 参数，system prompt 模板化切换 AI 回复语言 | UI 切英文时 AI 仍用中文回答 = 演示体验断层；GLM-4 能读懂中文上下文并用英文回答，无需翻译帖子内容 |

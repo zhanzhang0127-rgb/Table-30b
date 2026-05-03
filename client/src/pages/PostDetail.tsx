@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { toast } from "sonner";
+import { useT } from "@/contexts/I18nContext";
 
 export default function PostDetail() {
   const { user, loading, isAuthenticated } = useAuth();
@@ -62,15 +63,17 @@ export default function PostDetail() {
   const likedCommentsSet = new Set(myLikedComments as number[] || []);
 
   // Create comment mutation
+  const { t, lang } = useT();
+
   const createCommentMutation = trpc.comments.create.useMutation({
     onSuccess: () => {
       setCommentText("");
-      toast.success("评论成功！");
+      toast.success(t('toast.commentSuccess'));
       refetchComments();
       refetchPost();
     },
     onError: (error) => {
-      toast.error("评论失败：" + error.message);
+      toast.error(t('toast.commentFailed', { error: error.message }));
     },
   });
 
@@ -83,7 +86,7 @@ export default function PostDetail() {
       refetchPost();
     },
     onError: (error) => {
-      toast.error("点赞失败：" + error.message);
+      toast.error(t('toast.likeFailed', { error: error.message }));
     },
   });
 
@@ -94,7 +97,7 @@ export default function PostDetail() {
       refetchPost();
     },
     onError: (error) => {
-      toast.error("取消点赞失败：" + error.message);
+      toast.error(t('toast.unlikeFailed', { error: error.message }));
     },
   });
 
@@ -104,8 +107,8 @@ export default function PostDetail() {
       utils.likes.getMyLikedComments.invalidate();
       refetchComments();
     },
-    onError: (error) => {
-      toast.error("点赞失败：" + error.message);
+    onError: () => {
+      toast.error(t('toast.likeCommentFailed'));
     },
   });
 
@@ -115,51 +118,42 @@ export default function PostDetail() {
       utils.likes.getMyLikedComments.invalidate();
       refetchComments();
     },
-    onError: (error) => {
-      toast.error("取消点赞失败：" + error.message);
+    onError: () => {
+      toast.error(t('toast.unlikeCommentFailed'));
     },
   });
 
   // Delete comment mutation
   const deleteCommentMutation = trpc.comments.delete.useMutation({
     onSuccess: () => {
-      toast.success("评论已删除");
+      toast.success(t('toast.commentDeleted'));
       refetchComments();
       refetchPost();
     },
     onError: (error: any) => {
-      if (error.code === "FORBIDDEN") {
-        toast.error("您没有权限删除这条评论");
-      } else if (error.code === "NOT_FOUND") {
-        toast.error("评论不存在");
-      } else {
-        toast.error("删除失败：" + error.message);
-      }
+      toast.error(t('toast.deleteFailed', { error: error.message }));
     },
   });
 
   // Delete post mutation
   const deletePostMutation = trpc.posts.delete.useMutation({
     onSuccess: () => {
-      toast.success("帖子已删除");
+      toast.success(t('toast.postDeleted'));
       navigate("/feed");
     },
     onError: (error: any) => {
-      if (error.code === "FORBIDDEN") {
-        toast.error("您没有权限删除这个帖子");
-      } else if (error.code === "NOT_FOUND") {
-        toast.error("帖子不存在");
+      if (error.data?.code === "FORBIDDEN") {
+        toast.error(t('toast.noPermission'));
+      } else if (error.data?.code === "NOT_FOUND") {
+        toast.error(t('toast.postNotFound'));
       } else {
-        toast.error("删除失败：" + error.message);
+        toast.error(t('toast.deleteFailed', { error: error.message }));
       }
     },
   });
 
   const handleSubmitComment = async () => {
-    if (!commentText.trim() || !postId) {
-      toast.error("请输入评论内容");
-      return;
-    }
+    if (!commentText.trim() || !postId) return;
 
     setIsSubmittingComment(true);
     try {
@@ -191,13 +185,13 @@ export default function PostDetail() {
   };
 
   const handleDeleteComment = (commentId: number) => {
-    if (confirm("确定要删除这条评论吗？")) {
+    if (confirm(lang === 'en' ? 'Delete this comment?' : '确定要删除这条评论吗？')) {
       deleteCommentMutation.mutate(commentId);
     }
   };
 
   const handleDeletePost = () => {
-    if (confirm("确定要删除这个帖子吗？")) {
+    if (confirm(lang === 'en' ? 'Delete this post?' : '确定要删除这个帖子吗？')) {
       if (postId) {
         deletePostMutation.mutate(postId);
       }
@@ -226,12 +220,12 @@ export default function PostDetail() {
         <main className="container py-8">
           <div className="max-w-2xl mx-auto">
             <Card className="p-12 text-center">
-              <p className="text-foreground/70 mb-4">帖子不存在</p>
-              <Button 
+              <p className="text-foreground/70 mb-4">{t('postDetail.notFound')}</p>
+              <Button
                 onClick={() => navigate("/feed")}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                返回首页
+                {t('postDetail.backToFeed')}
               </Button>
             </Card>
           </div>
@@ -247,10 +241,10 @@ export default function PostDetail() {
   };
   const hasDualRatings = typeof post.tasteRating === "number" && typeof post.valueRating === "number";
   const postTypeBadge = post.postType === "delivery"
-    ? "🛵 外卖"
+    ? t('postDetail.delivery')
     : post.postType === "dine-in"
-    ? "🍽 堂食"
-    : "📝 未分类";
+    ? t('postDetail.dineIn')
+    : "📝";
 
   return (
     <div className="min-h-screen bg-background">
@@ -263,7 +257,7 @@ export default function PostDetail() {
             className="flex items-center gap-2 text-foreground/60 hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="text-sm font-medium">返回社区</span>
+            <span className="text-sm font-medium">{t('postDetail.backToFeed')}</span>
           </button>
           {/* Post Card */}
           <Card className="overflow-hidden">
@@ -292,7 +286,7 @@ export default function PostDetail() {
                       onClick={handleDeletePost}
                       disabled={deletePostMutation.isPending}
                       className="p-2 hover:bg-destructive/10 hover:text-destructive rounded-lg transition-colors"
-                      title="删除帖子"
+                      title={t('postDetail.deletePost')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -309,11 +303,11 @@ export default function PostDetail() {
               </div>
               {hasDualRatings ? (
                 <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-foreground/75">
-                  <span>口味 {renderStars(post.tasteRating!)} ({post.tasteRating})</span>
-                  <span>性价比 {renderStars(post.valueRating!)} ({post.valueRating})</span>
+                  <span>{t('postDetail.tasteRating')} {renderStars(post.tasteRating!)} ({post.tasteRating})</span>
+                  <span>{t('postDetail.valueRating')} {renderStars(post.valueRating!)} ({post.valueRating})</span>
                 </div>
               ) : post.rating ? (
-                <div className="mb-2 text-sm text-foreground/75">综合评分 {renderStars(post.rating)} ({post.rating})</div>
+                <div className="mb-2 text-sm text-foreground/75">★ {post.rating}</div>
               ) : null}
               {post.postType === "dine-in" && post.location && (
                 <p className="mb-2 text-sm text-foreground/70">📍 {post.location}</p>
@@ -407,7 +401,7 @@ export default function PostDetail() {
                     element?.scrollIntoView({ behavior: "smooth" });
                   }}
                   className="flex items-center gap-2 hover:text-primary transition-colors"
-                  title="查看评论"
+                  title={t('postDetail.commentsTitle')}
                 >
                   <MessageCircle className="w-5 h-5" />
                   <span className="text-sm">{post.comments || 0}</span>
@@ -418,7 +412,7 @@ export default function PostDetail() {
 
           {/* Comment Section */}
           <Card className="p-6" id="comments-section">
-            <h2 className="text-lg font-bold text-foreground mb-4">评论</h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">{t('postDetail.commentsTitle')}</h2>
 
             {/* Comment Input */}
             <div className="mb-6 pb-6 border-b border-border">
@@ -430,7 +424,7 @@ export default function PostDetail() {
                 </div>
                 <div className="flex-1">
                   <Input
-                    placeholder="写下你的评论..."
+                    placeholder={t('postDetail.commentPlaceholder')}
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
                     className="bg-muted/50 border-border mb-2"
@@ -443,7 +437,7 @@ export default function PostDetail() {
                       className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
                     >
                       {isSubmittingComment && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {isSubmittingComment ? "发布中..." : "发布"}
+                      {t('postDetail.commentSend')}
                     </Button>
                   </div>
                 </div>
@@ -505,7 +499,7 @@ export default function PostDetail() {
                 ))}
               </div>
             ) : (
-              <p className="text-center text-foreground/60 py-8">暂无评论，成为第一个评论者吧！</p>
+              <p className="text-center text-foreground/60 py-8">{t('postDetail.noComments')}</p>
             )}
           </Card>
         </div>

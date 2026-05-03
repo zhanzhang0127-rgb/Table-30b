@@ -391,7 +391,7 @@ export default function Publish() {
                   {voiceState.kind === "idle" && (
                     <Button type="button" onClick={startVoiceRecording} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
                       <Mic className="w-4 h-4" />
-                      开始录音
+                      {t('publish.voiceStart')}
                     </Button>
                   )}
                   {voiceState.kind === "recording" && (
